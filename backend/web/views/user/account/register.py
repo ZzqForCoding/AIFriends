@@ -15,7 +15,7 @@ class RegisterView(APIView):
                 return Response({
                     'result': '用户和密码不能为空'
                 })
-            if User.object.get(username=username):
+            if User.objects.filter(username=username).exists():
                 return Response({
                     'result': '用户名已存在'
                 })
@@ -40,6 +40,8 @@ class RegisterView(APIView):
             )
             return response
         except:
+            import traceback
+            traceback.print_exc()
             return Response({
                 'result': '系统异常，请稍后重试'
             })
