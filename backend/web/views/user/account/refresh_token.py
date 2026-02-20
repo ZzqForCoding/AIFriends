@@ -7,7 +7,6 @@ from rest_framework_simplejwt.tokens import RefreshToken
 class RefreshTokenView(APIView):
     def post(self, request):
         try:
-            print(request.COOKIES)
             refresh_token = request.COOKIES.get('refresh_token')
             if not refresh_token:
                 return Response({

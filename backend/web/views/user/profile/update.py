@@ -32,7 +32,7 @@ class UpdateProfileView(APIView):
                 })
 
             if photo:
-                remove_old_photo(photo)
+                remove_old_photo(user_profile.photo)
                 user_profile.photo = photo
             user_profile.profile = profile
             user_profile.update_time = now()
@@ -44,7 +44,7 @@ class UpdateProfileView(APIView):
                 'user_id': user.id,
                 'username': user.username,
                 'profile': user_profile.profile,
-                'photo': user_profile.photo,
+                'photo': user_profile.photo.url,
             })
         except:
             return Response({
