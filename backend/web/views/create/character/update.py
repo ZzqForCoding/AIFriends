@@ -35,7 +35,9 @@ class UpdateCharacterView(APIView):
             character.profile = profile
             character.updated_at = now()
             character.save()
-
+            return Response({
+                'result': 'success',
+            })
         except:
             return Response({
                 'result': '系统异常, 请稍后重试'
