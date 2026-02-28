@@ -7,13 +7,13 @@ from web.models.user import UserProfile
 
 def photo_upload_to(instance, filename):
     ext = filename.split('.')[-1]
-    filename = f'{uuid.uuid4()[:10]}.{ext}'
+    filename = f'{uuid.uuid4().hex[:10]}.{ext}'
     # user_id和user.id都可以，user_id会免去一次查询
     return f'character/photos/{instance.author.user_id}_{filename}'
 
 def background_image_upload_to(instance, filename):
     ext = filename.split('.')[-1]
-    filename = f'{uuid.uuid4()[:10]}.{ext}'
+    filename = f'{uuid.uuid4().hex[:10]}.{ext}'
     return f'character/background_images/{instance.author.user_id}_{filename}'
 
 class Character(models.Model):
