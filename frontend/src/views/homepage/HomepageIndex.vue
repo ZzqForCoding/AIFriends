@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import Character from '@/components/character/Character.vue';
 import api from '@/js/http/api';
-import { nextTick, onBeforeMount, onMounted, ref, useTemplateRef } from 'vue';
+import { nextTick, onBeforeMount, onMounted, ref, useTemplateRef, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
 const characters = ref<any[]>([])
 const isLoading = ref(false)
 const hasCharacters = ref(true)
 const sentinelRef = useTemplateRef('sentinel-ref')
+const route = useRoute()
 
 function checkSentinelVisible() {  // 判断哨兵是否能被看到
   if (!sentinelRef.value) return false
@@ -24,14 +26,14 @@ async function loadMore() {
         const res = await api.get('/api/homepage/index/', {
             params: {
                 items_count: characters.value.length,
+                search_query: route.query.q || ''
             }
         })
         const data = res.data
         if(data.result === 'success') {
             newCharacters = data.characters
         }
-    } catch (err) {
-        console.log(err)
+    } catch (err) { 
     } finally {
         isLoading.value = false
         if(newCharacters.length === 0) {
@@ -45,6 +47,17 @@ async function loadMore() {
         }
     }
 }
+
+function reset() {
+    characters.value = []
+    isLoading.value = false
+    hasCharacters.value = true
+    loadMore()
+}
+
+watch(() => route.query.q, () => {
+    reset()
+})
 
 let observer: IntersectionObserver | null = null
 onMounted(async () => {
