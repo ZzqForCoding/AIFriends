@@ -1,0 +1,25 @@
+{
+    "python.analysis.extraPaths": ["./backend"],
+    "python.autoComplete.extraPaths": ["./backend"],
+    "python.defaultInterpreterPath": "./.venv/Scripts/python",
+
+  // 启用自动补全时自动添加 import 语句
+  "python.analysis.autoImportCompletions": true,
+  
+  // 启用 Pylance 作为语言服务器
+  "python.languageServer": "Pylance",
+  
+  // 控制是否在键入时自动触发建议
+  "editor.quickSuggestions": {
+    "other": true,
+    "comments": false,
+    "strings": true
+  },
+  "python.analysis.importFormat": "absolute",
+  
+  // 基础类型检查，避免太严格
+  "python.analysis.typeCheckingMode": "basic",
+  
+  // 启用 Django 支持（配合 Django 插件）
+  "django.enabled": true
+}
