@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import UserInfoField from './components/UserInfoField.vue';
 import { useRoute } from 'vue-router';
 import api from '@/js/http/api';
@@ -11,6 +11,14 @@ const characters = ref<any[]>([])
 const isLoading = ref(false)
 const hasCharacters = ref(true)
 const sentinelRef = useTemplateRef('sentinel-ref')
+
+function reset() {
+    userProfile.value = null
+    characters.value = []
+    isLoading.value = false
+    hasCharacters.value = true
+    loadMore()
+}
 
 function checkSentinelVisible() {  // 判断哨兵是否能被看到
   if (!sentinelRef.value) return false
@@ -73,6 +81,10 @@ onMounted(async()=> {
 
 onBeforeUnmount(() => {
     observer?.disconnect()
+})
+
+watch(() => route.params.user_id, () => {
+    reset()
 })
 </script>
 
