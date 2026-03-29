@@ -50,7 +50,7 @@ async function handleLogin() {
 
       <p v-if="errorMessage" class="text-sm text-red-500 mt-1">{{errorMessage}}</p>
 
-      <button @click="handleLogin" class="btn btn-neutral mt-4">登录</button>
+      <button class="btn btn-neutral mt-4">登录</button>
       <div class="flex justify-end">
         <router-link :to="{name: 'user-account-register-index'}" class="btn btn-sm btn-ghost text-gray-500">
           注册

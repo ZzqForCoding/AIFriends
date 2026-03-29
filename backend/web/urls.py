@@ -31,8 +31,8 @@ urlpatterns = [
     path('api/create/character/get_list/', GetListCharacterView.as_view()),
     path('api/homepage/index/', HomepageIndexView.as_view()),
     path('api/friend/get_or_create/', GetOrCreateFriendView.as_view()),
-    path('api/friend/remove', RemoveFriendView.as_view()),
-    path('api/friend/get_list', GetListFriendView.as_view()),
+    path('api/friend/remove/', RemoveFriendView.as_view()),
+    path('api/friend/get_list/', GetListFriendView.as_view()),
     path('', index),
     # 兜底路由，若路由没匹配到，则交由前端处理
     re_path(r'^(?!media/|static/|assets/).*$', index)
