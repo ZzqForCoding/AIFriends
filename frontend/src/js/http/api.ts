@@ -9,7 +9,7 @@
 */
 
 import axios from "axios"
-import {useUserStore} from "@/stores/user.js";
+import {useUserStore} from "@/stores/user.ts";
 
 const BASE_URL = 'http://127.0.0.1:8000'
 

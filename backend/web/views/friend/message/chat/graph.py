@@ -6,20 +6,28 @@ from langgraph.graph import END, START, StateGraph, add_messages
 from pydantic import SecretStr
 
 
+
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], add_messages]
+
+
 class ChatGraph:
     @staticmethod
     def create_app():
         llm = ChatOpenAI(
             model='deepseek-v3.2',
             api_key=SecretStr(os.getenv('API_KEY') or ''),
-            base_url=os.getenv('API_BASE')
+            base_url=os.getenv('API_BASE'),
+            streaming=True,
+            model_kwargs={
+                "stream_options": {
+                    "include_usage": True,
+                }
+            }
         )
 
-        class AgentState(TypedDict):
-            messages: Annotated[Sequence[BaseMessage], add_messages]
-
         def modal_call(state: AgentState) -> AgentState:
-            res = llm.invoke([state['messages']])
+            res = llm.invoke(list(state['messages']))
             return {'messages': [res]}
         
         graph = StateGraph(AgentState)
