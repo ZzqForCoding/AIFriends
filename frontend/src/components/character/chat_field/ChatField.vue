@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, useTemplateRef } from 'vue';
+import { computed, nextTick, ref, useTemplateRef } from 'vue';
 import InputField from './input_field/InputField.vue';
 import CharacterPhotoField from './character_photo_field/CharacterPhotoField.vue';
+import ChatHistory from './chat_history/ChatHistory.vue';
 
 const props = defineProps(['friend'])
 
 const modalRef = useTemplateRef<HTMLDialogElement>('modal-ref')
 const inputRef = useTemplateRef('input-ref')
+const chatHistoryRef = useTemplateRef('chat-history-ref')
+const history = ref<any>([])
 
 const modalStyle = computed(() => {
   if (props.friend) {
@@ -20,6 +23,20 @@ const modalStyle = computed(() => {
     return {}
   }
 })
+
+function handlePushBackMessage(msg: string) {
+  history.value.push(msg)
+  chatHistoryRef.value?.scrollToBottom()
+}
+
+function handleAddToLastMessage(delta: string) {
+    history.value.at(-1).content += delta
+  chatHistoryRef.value?.scrollToBottom()
+}
+
+function handlePushFrontMessage(msg: any) {
+  history.value.unshift(msg)
+}
 
 async function showModal() {
     modalRef.value?.showModal()
@@ -36,7 +53,8 @@ defineExpose({
     <dialog ref="modal-ref" class="modal">
         <div class="modal-box w-90 h-150" :style="modalStyle">
             <button @click="modalRef?.close()" class="btn btn-circle btn-sm btn-ghost bg-transparent absolute right-2 top-2">x</button>
-            <InputField v-if="friend" ref="input-ref" :friendId="friend.id" />
+            <ChatHistory ref="chat-history-ref" v-if="friend" :history="history" :friendId="friend.id" :character="friend.character"  @pushFrontMessage="handlePushFrontMessage" />
+            <InputField v-if="friend" ref="input-ref" :friendId="friend.id" @pushBackMessage="handlePushBackMessage" @addToLastMessage="handleAddToLastMessage" />
             <CharacterPhotoField v-if="friend" :character="friend.character" />
         </div>
     </dialog>

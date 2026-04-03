@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage, BaseMessageChunk, AIMessageChu
 
 import json
 
-from web.models.friend import Friend
+from web.models.friend import Friend, Message
 from web.views.friend.message.chat.graph import AgentState, ChatGraph
 
 class SSERenderer(BaseRenderer):
@@ -43,15 +43,32 @@ class MessageChatView(APIView):
         # 非流式回复
         # res = app.invoke(inputs)
         def event_stream():
+            full_output = ''
             full_usage = {}
             for msg, metadata in app.stream(inputs, stream_mode="messages"):
                 if isinstance(msg, BaseMessageChunk):
                     if msg.content:
+                        full_output += str(msg.content)
                         yield f'data: {json.dumps({'content': msg.content}, ensure_ascii=False)}\n\n'
                     if isinstance(msg, AIMessageChunk) and  hasattr(msg, 'usage_metadata') and msg.usage_metadata:
                         full_usage = msg.usage_metadata
             yield 'data: [DONE]\n\n'
-            print(full_usage)
+            input_tokens = full_usage.get('input_tokens', 0)
+            output_tokens = full_usage.get('output_tokens', 0)
+            total_tokens = full_usage.get('total_tokens', 0)
+            Message.objects.create(
+                friend = friend,
+                user_message = message[:500],
+                input = json.dumps(
+                    [m.model_dump() for m in inputs['messages']],
+                    ensure_ascii=False
+                )[:10000],
+                output = full_output[:500],
+                input_tokens = input_tokens,
+                output_tokens = output_tokens,
+                total_tokens = total_tokens
+            )
+
 
         response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
         response['Cache-Control'] = 'no-cache'
