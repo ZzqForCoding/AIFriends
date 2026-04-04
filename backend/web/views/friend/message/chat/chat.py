@@ -1,14 +1,16 @@
+from pprint import pprint
+
 from django.http import StreamingHttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import BaseRenderer
 
-from langchain_core.messages import HumanMessage, BaseMessageChunk, AIMessageChunk
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessageChunk, AIMessageChunk, SystemMessage
 
 import json
 
-from web.models.friend import Friend, Message
+from web.models.friend import Friend, Message, SystemPrompt
 from web.views.friend.message.chat.graph import AgentState, ChatGraph
 
 class SSERenderer(BaseRenderer):
@@ -17,6 +19,24 @@ class SSERenderer(BaseRenderer):
     def render(self, data, accepted_media_type=None, renderer_context=None):
         return data
 
+def add_system_prompt(state, friend) -> AgentState:
+    msgs = state['messages']
+    system_prompts = SystemPrompt.objects.filter(title='回复').order_by('order_number')
+    prompt = ''
+    for sp in system_prompts:
+        prompt += sp.prompt
+    prompt += f'\n【角色性格】\n{friend.character.profile}\n'
+    return {'messages': [SystemMessage(prompt)] + msgs}
+
+def add_recent_messages(state, friend) -> AgentState:
+    msgs = state['messages']
+    message_raw = list(Message.objects.filter(friend=friend).order_by('-id')[:10])
+    message_raw.reverse()
+    messages = []
+    for m in message_raw:
+        messages.append(HumanMessage(m.user_message))
+        messages.append(AIMessage(m.output))
+    return {'messages': msgs[:1] + messages + msgs[-1:]}
 
 class MessageChatView(APIView):
     permission_classes = [IsAuthenticated]
@@ -40,6 +60,8 @@ class MessageChatView(APIView):
         inputs: AgentState = {
             'messages': [HumanMessage(content=message)]
         }
+        inputs = add_system_prompt(inputs, friend)
+        inputs = add_recent_messages(inputs, friend)
         # 非流式回复
         # res = app.invoke(inputs)
         def event_stream():
