@@ -6,10 +6,10 @@
 */
 
 import { fetchEventSource } from '@microsoft/fetch-event-source';
-import {useUserStore} from "@/stores/user.ts";
+import { useUserStore } from "@/stores/user.js";
 import api from "./api.js";
 
-const BASE_URL = 'http://127.0.0.1:8000/';
+const BASE_URL = 'http://127.0.0.1:8000/'
 
 /**
  * 流式请求选项
@@ -26,31 +26,48 @@ interface StreamApiOptions {
 /**
  * 通用的流式请求工具
  * @param {string} url 请求地址
- * @param {StreamApiOptions} options 配置项
+ * @param {StreamApiOptions} options 配置项 (method, body, onmessage, onerror等)
  */
-export default async function streamApi(
-  url: string,
-  options: StreamApiOptions = {}
-): Promise<void> {
+export default async function streamApi(url: string, options: StreamApiOptions = {}): Promise<void> {
   const userStore = useUserStore();
+
+  const buildHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${userStore.accessToken}`,
+    };
+    if (!options.headers) return headers;
+
+    if (Array.isArray(options.headers)) {
+      options.headers.forEach(([key, value]) => {
+        headers[key] = value;
+      });
+    } else if (options.headers instanceof Headers) {
+      options.headers.forEach((value, key) => {
+        headers[key] = value;
+      });
+    } else {
+      Object.assign(headers, options.headers);
+    }
+    return headers;
+  };
 
   const startFetch = async (): Promise<void> => {
     await fetchEventSource(BASE_URL + url, {
       method: options.method || 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userStore.accessToken}`,
-        ...options.headers,
-      } as HeadersInit,
+      headers: buildHeaders(),
       body: JSON.stringify(options.body || {}),
-      openWhenHidden: true,
+      openWhenHidden: true,  // 允许后台运行，防止浏览器因隐藏页面而强制关闭它
       async onopen(response: Response): Promise<void> {
-        // 处理 401 Token 过期
+        // 1. 处理 401 Token 过期
         if (response.status === 401) {
           try {
+            // 触发 api.js 中的 Axios 拦截器进行静默刷新
             await api.post('/api/user/account/refresh_token/', {});
+            // 抛出特定错误触发下面的 onerror 重试逻辑
             throw new Error("TOKEN_REFRESHED");
           } catch (err) {
+            // 如果刷新失败（refresh_token也过期），直接报错由上层处理
             throw err;
           }
         }
@@ -73,13 +90,17 @@ export default async function streamApi(
         }
       },
       onerror(err: Error): void {
+        // 2. 捕获重试信号并递归
         if (err.message === "TOKEN_REFRESHED") {
-          return startFetch();
+          startFetch();
+          return
         }
+
+        // 其他错误则按用户定义的 onerror 处理
         if (options.onerror) {
           options.onerror(err);
         }
-        throw err;
+        throw err; // 停止自动重试
       },
       onclose: options.onclose,
     });

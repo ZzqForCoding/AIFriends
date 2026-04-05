@@ -1,5 +1,4 @@
 import os
-from pprint import pprint
 
 from django.utils.timezone import localtime, now
 from typing import Annotated, Sequence, TypedDict
@@ -57,7 +56,6 @@ class ChatGraph:
         ).bind_tools(tools)
 
         def modal_call(state: AgentState) -> AgentState:
-            pprint(state['messages'])
             res = llm.invoke(list(state['messages']))
             return {'messages': [res]}
         
