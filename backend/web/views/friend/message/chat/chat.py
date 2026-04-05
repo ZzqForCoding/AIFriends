@@ -1,6 +1,5 @@
-from pprint import pprint
-
 from django.http import StreamingHttpResponse
+from typing import Generator
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -12,6 +11,7 @@ import json
 
 from web.models.friend import Friend, Message, SystemPrompt
 from web.views.friend.message.chat.graph import AgentState, ChatGraph
+from web.views.friend.message.memory.update import update_memory
 
 class SSERenderer(BaseRenderer):
     media_type = 'text/event-stream'
@@ -26,6 +26,7 @@ def add_system_prompt(state, friend) -> AgentState:
     for sp in system_prompts:
         prompt += sp.prompt
     prompt += f'\n【角色性格】\n{friend.character.profile}\n'
+    prompt += f'【长期记忆】\n{friend.memory}\n'
     return {'messages': [SystemMessage(prompt)] + msgs}
 
 def add_recent_messages(state, friend) -> AgentState:
@@ -64,17 +65,17 @@ class MessageChatView(APIView):
         inputs = add_recent_messages(inputs, friend)
         # 非流式回复
         # res = app.invoke(inputs)
-        def event_stream():
+        def event_stream() -> Generator[bytes, Any, None]:
             full_output = ''
             full_usage = {}
             for msg, metadata in app.stream(inputs, stream_mode="messages"):
                 if isinstance(msg, BaseMessageChunk):
                     if msg.content:
                         full_output += str(msg.content)
-                        yield f'data: {json.dumps({'content': msg.content}, ensure_ascii=False)}\n\n'
+                        yield f'data: {json.dumps({'content': msg.content}, ensure_ascii=False)}\n\n'.encode('utf-8')
                     if isinstance(msg, AIMessageChunk) and  hasattr(msg, 'usage_metadata') and msg.usage_metadata:
                         full_usage = msg.usage_metadata
-            yield 'data: [DONE]\n\n'
+            yield 'data: [DONE]\n\n'.encode('utf-8')
             input_tokens = full_usage.get('input_tokens', 0)
             output_tokens = full_usage.get('output_tokens', 0)
             total_tokens = full_usage.get('total_tokens', 0)
@@ -90,7 +91,8 @@ class MessageChatView(APIView):
                 output_tokens = output_tokens,
                 total_tokens = total_tokens
             )
-
+            if Message.objects.filter(friend=friend).count() % 1 == 0:
+                update_memory(friend)
 
         response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
         response['Cache-Control'] = 'no-cache'
