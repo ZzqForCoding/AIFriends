@@ -8,4 +8,5 @@ static/
 
 
 *.env
-backend/web/documents/
+backend/web/documents/data.txt
+backend/web/documents/lancedb_storage
