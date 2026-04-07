@@ -80,6 +80,8 @@ class MessageChatView(APIView):
 
         response = StreamingHttpResponse(self.event_stream(app, inputs, friend, message), content_type='text/event-stream')
         response['Cache-Control'] = 'no-cache'
+        # 避免让nginx缓存
+        response['X-Accel-Buffering'] = 'no'
         return response
     
     async def tts_sender(self, app, inputs, mq, ws, task_id):
@@ -196,7 +198,7 @@ class MessageChatView(APIView):
                 full_output += msg['content']
                 yield f'data: {json.dumps({'content': msg['content']}, ensure_ascii=False)}\n\n'.encode('utf-8')
             if msg.get('audio', None):
-                yield f'data: {json.dumps({'content': msg['audio']}, ensure_ascii=False)}\n\n'.encode('utf-8')
+                yield f'data: {json.dumps({'audio': msg['audio']}, ensure_ascii=False)}\n\n'.encode('utf-8')
             if msg.get('usage', None):
                 full_usage = msg['usage']
         yield 'data: [DONE]\n\n'.encode('utf-8')

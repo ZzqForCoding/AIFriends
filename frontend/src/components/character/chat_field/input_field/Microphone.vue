@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import KeyBoardIcon from '../../icons/KeyBoardIcon.vue';
+import KeyboardIcon from '../../icons/KeyboardIcon.vue';
 import { MicVAD } from '@ricky0123/vad-web';
 import api from '@/js/http/api';
 
@@ -11,7 +11,7 @@ const isSpeaking = ref(false)
 let vadInstance: MicVAD | null = null;
 
 const startRecording = async () => {
-  const baseUrl = "http://localhost:5173/vad/";
+  const baseUrl = "http://127.0.0.1:8000/static/frontend/vad/";
   try {
     vadInstance = await MicVAD.new({
       baseAssetPath: baseUrl,
@@ -88,7 +88,7 @@ onBeforeUnmount(() => {
             语音输入
         </div>
         <div @click="emit('close')" class="absolute right-2 w-8 h-8 flex justify-center items-center cursor-pointer">
-            <KeyBoardIcon />
+            <KeyboardIcon />
         </div>
     </div>
 </template>
