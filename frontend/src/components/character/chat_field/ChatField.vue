@@ -45,6 +45,11 @@ async function showModal() {
     inputRef.value?.focus()
 }
 
+function handleClose() {
+  modalRef.value?.close()
+  inputRef.value?.close()
+}
+
 defineExpose({
     showModal
 })
@@ -52,7 +57,7 @@ defineExpose({
 <template>
     <dialog ref="modal-ref" class="modal">
         <div class="modal-box w-90 h-150" :style="modalStyle">
-            <button @click="modalRef?.close()" class="btn btn-circle btn-sm btn-ghost bg-transparent absolute right-2 top-2">x</button>
+            <button @click="handleClose" class="btn btn-circle btn-sm btn-ghost bg-transparent absolute right-2 top-2">x</button>
             <ChatHistory ref="chat-history-ref" v-if="friend" :history="history" :friendId="friend.id" :character="friend.character"  @pushFrontMessage="handlePushFrontMessage" />
             <InputField v-if="friend" ref="input-ref" :friendId="friend.id" @pushBackMessage="handlePushBackMessage" @addToLastMessage="handleAddToLastMessage" />
             <CharacterPhotoField v-if="friend" :character="friend.character" />
