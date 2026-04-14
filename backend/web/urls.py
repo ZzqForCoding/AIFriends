@@ -19,6 +19,7 @@ from web.views.friend.remove import RemoveFriendView
 from web.views.friend.message.chat.chat import MessageChatView
 from web.views.friend.message.get_history import GetHistoryView
 from web.views.friend.message.asr.asr import ASRView
+from web.views.friend.message.tts.tts import TtsView
 
 urlpatterns = [
     path('api/user/account/login/', LoginView.as_view()),
@@ -39,6 +40,7 @@ urlpatterns = [
     path('api/friend/message/chat/', MessageChatView.as_view()),
     path('api/friend/message/get_history/', GetHistoryView.as_view()),
     path('api/friend/message/asr/asr/', ASRView.as_view()),
+    path('api/friend/message/tts/tts/', TtsView.as_view()),
     path('', index),
     # 兜底路由，若路由没匹配到，则交由前端处理
     re_path(r'^(?!media/|static/|assets/).*$', index)

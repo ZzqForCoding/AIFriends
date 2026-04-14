@@ -13,6 +13,8 @@ import {useUserStore} from "@/stores/user.ts";
 const router = useRouter()
 const user = useUserStore()
 
+const isLoading = ref(false)
+
 const photoRef = useTemplateRef('photo-ref')
 const nameRef = useTemplateRef('name-ref')
 const profileRef = useTemplateRef('profile-ref')
@@ -21,6 +23,7 @@ const backgroundImageRef = useTemplateRef('background-image-ref')
 const errorMessage = ref('')
 
 async function handleCreate() {
+  isLoading.value = true
   const photo = photoRef.value?.myPhoto
   const name = nameRef.value?.myName?.trim()
   const profile = profileRef.value?.myProfile?.trim()
@@ -56,8 +59,11 @@ async function handleCreate() {
         errorMessage.value = data.result
       }
     } catch (err) {
+    } finally {
+      isLoading.value = false
     }
   }
+  isLoading.value = false
 }
 </script>
 
@@ -72,7 +78,9 @@ async function handleCreate() {
         <BackgroundImage ref="background-image-ref"/>
         <p v-if="errorMessage" class="text-sm text-red-500">{{errorMessage}}</p>
         <div class="flex justify-center">
-          <button @click="handleCreate" class="btn btn-neutral w-60 mt-2">创建</button>
+          <button @click="handleCreate" :disabled="isLoading" class="btn btn-neutral w-60 mt-2">
+            {{ isLoading ? '创建中...' : '创建' }}
+          </button>
         </div>
       </div>
     </div>

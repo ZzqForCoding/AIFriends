@@ -8,6 +8,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
+# 语音识别
+# 阿里云ASR文档：https://bailian.console.aliyun.com/cn-beijing/?spm=5176.12818093_47.console-base_product-drawer-right.dproducts-and-services-sfm.258b16d0dZyCzu&tab=api#/api/?type=model&url=2869339
 class ASRView(APIView):
     permission_classes = [IsAuthenticated]
 

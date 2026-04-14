@@ -90,6 +90,7 @@ class MessageChatView(APIView):
         async for msg, metadata in app.astream(inputs, stream_mode="messages"):
             if isinstance(msg, BaseMessageChunk):
                 if msg.content:
+                    # 发送用户消息给阿里云百炼TTS大模型
                     await ws.send(json.dumps({
                         "header": {
                             "action": "continue-task",
@@ -107,7 +108,7 @@ class MessageChatView(APIView):
                     mq.put_nowait({
                         'content': msg.content
                     })
-                if isinstance(msg, AIMessageChunk) and  hasattr(msg, 'usage_metadata') and msg.usage_metadata:
+                if isinstance(msg, AIMessageChunk) and hasattr(msg, 'usage_metadata') and msg.usage_metadata:
                     mq.put_nowait({
                         'usage': msg.usage_metadata
                     })
@@ -126,6 +127,7 @@ class MessageChatView(APIView):
         async for msg in ws:
             if isinstance(msg, bytes):
                 audio = base64.b64encode(msg).decode('utf-8')
+                # 收到阿里云百炼TTS大模型返回的用户消息音频
                 mq.put_nowait({'audio': audio})
             else:
                 data = json.loads(msg)
@@ -133,7 +135,8 @@ class MessageChatView(APIView):
                 if event in ['task-finished', 'task-failed']:
                     break
 
-    
+    # 语音合成
+    # 阿里云TTS文档：https://bailian.console.aliyun.com/cn-beijing/?spm=5176.12818093_47.console-base_product-drawer-right.dproducts-and-services-sfm.258b16d0dZyCzu&tab=api#/api/?type=model&url=2853143
     async def run_tts_tasks(self, app, inputs, mq):
         task_id = uuid4().hex
         api_key = os.getenv('API_KEY')
@@ -184,7 +187,10 @@ class MessageChatView(APIView):
             mq.put_nowait(None)
 
     def event_stream(self, app, inputs, friend, message) -> Generator[bytes, Any, None]:
+        # 线程安全的队列
         mq = Queue()
+        # 创建线程
+        # 主线程是下面的while循环负责将队列的消息进行逐个消费
         thread = threading.Thread(target=self.work, args=(app, inputs, mq))
         thread.start()
 
@@ -194,11 +200,13 @@ class MessageChatView(APIView):
             msg = mq.get()
             if not msg:
                 break
+            # 若是用户消息，则流式返回用户消息
             if msg.get('content', None):
                 full_output += msg['content']
-                yield f'data: {json.dumps({'content': msg['content']}, ensure_ascii=False)}\n\n'.encode('utf-8')
+                yield f'data: {json.dumps({"content": msg["content"]}, ensure_ascii=False)}\n\n'.encode('utf-8')
+            # 若是用户消息音频，则流式返回用户消息音频
             if msg.get('audio', None):
-                yield f'data: {json.dumps({'audio': msg['audio']}, ensure_ascii=False)}\n\n'.encode('utf-8')
+                yield f'data: {json.dumps({"audio": msg["audio"]}, ensure_ascii=False)}\n\n'.encode('utf-8')
             if msg.get('usage', None):
                 full_usage = msg['usage']
         yield 'data: [DONE]\n\n'.encode('utf-8')

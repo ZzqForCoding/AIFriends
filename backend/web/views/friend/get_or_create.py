@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from web.models.friend import Friend
+from web.models.friend import Friend, Message
 from web.models.user import UserProfile
 
 class GetOrCreateFriendView(APIView):
@@ -13,12 +13,22 @@ class GetOrCreateFriendView(APIView):
             character_id = request.data['character_id']
             user = request.user
             user_profile = UserProfile.objects.get(user=user)
-            friends = Friend.objects.filter(character_id=character_id, me=user_profile)
-            if friends.exists():
-                friend = friends.first()
-            else:
-                friend = Friend.objects.create(character_id=character_id, me=user_profile)
+
+            friend, created = Friend.objects.get_or_create(
+                character_id=character_id,
+                me=user_profile
+            )
             character = friend.character
+            if created and character.opening_message:
+                Message.objects.create(
+                    friend=friend,
+                    user_message='',
+                    input='',
+                    output=character.opening_message,
+                    input_tokens=0,
+                    output_tokens=0,
+                    total_tokens=0
+                )
             author = character.author
             return Response({
                 'result': 'success',
