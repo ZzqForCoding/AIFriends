@@ -96,7 +96,7 @@ defineExpose({
         <div class="modal-box w-90 h-150" :style="modalStyle">
             <button @click="handleClose" class="btn btn-circle btn-sm btn-ghost bg-transparent absolute right-2 top-2">x</button>
             <ChatHistory ref="chat-history-ref" v-if="friend" :history="history" :friendId="friend.id" :character="friend.character"  @pushFrontMessage="handlePushFrontMessage"  />
-            <InputField v-if="friend" ref="input-ref" :friendId="friend.id" @pushBackMessage="handlePushBackMessage" @addToLastMessage="handleAddToLastMessage" />
+            <InputField v-if="friend" ref="input-ref" :friendId="friend.id" @pushBackMessage="handlePushBackMessage" @addToLastMessage="handleAddToLastMessage" @stopOpeningAudio="stopOpeningAudio" />
             <CharacterPhotoField v-if="friend" :character="friend.character" />
         </div>
     </dialog>

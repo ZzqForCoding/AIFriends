@@ -6,7 +6,7 @@ import streamApi from '@/js/http/streamApi'
 import Microphone from './Microphone.vue';
 
 const props = defineProps(['friendId'])
-const emit = defineEmits(['pushBackMessage', 'addToLastMessage'])
+const emit = defineEmits(['pushBackMessage', 'addToLastMessage', 'stopOpeningAudio'])
 
 const inputRef = useTemplateRef('input-ref')
 const message = ref('')
@@ -66,6 +66,7 @@ function close() {
 function handleStop() {
     ++processId
     stopAudio()
+    emit('stopOpeningAudio')
 }
 
 let mediaSource: MediaSource | null = null;
