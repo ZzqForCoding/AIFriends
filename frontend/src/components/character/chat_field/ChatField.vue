@@ -7,12 +7,13 @@ import api from '@/js/http/api';
 
 const props = defineProps(['friend'])
 
-const modalRef = useTemplateRef<HTMLDialogElement>('modal-ref')
 const inputRef = useTemplateRef('input-ref')
 const chatHistoryRef = useTemplateRef('chat-history-ref')
 const history = ref<any>([])
 const hasPlayedOpening = ref(false)   // 是否播放开场白
 const openingAudio = ref<HTMLAudioElement | null>(null)   // 正在播放的语音
+const isOpen = ref(false)
+const isSidebarOpen = ref(true)
 
 const modalStyle = computed(() => {
   if (props.friend) {
@@ -51,15 +52,17 @@ function stopOpeningAudio() {
 }
 
 async function showModal() {
+    history.value = []
+    hasPlayedOpening.value = false
     stopOpeningAudio()
-    modalRef.value?.showModal()
+    isOpen.value = true
     await nextTick()
     inputRef.value?.focus()
 }
 
 function handleClose() {
   stopOpeningAudio()
-  modalRef.value?.close()
+  isOpen.value = false
   inputRef.value?.close()
 }
 
@@ -92,15 +95,45 @@ defineExpose({
 })
 </script>
 <template>
-    <dialog ref="modal-ref" class="modal">
-        <div class="modal-box w-90 h-150" :style="modalStyle">
-            <button @click="handleClose" class="btn btn-circle btn-sm btn-ghost bg-transparent absolute right-2 top-2">x</button>
-            <ChatHistory ref="chat-history-ref" v-if="friend" :history="history" :friendId="friend.id" :character="friend.character"  @pushFrontMessage="handlePushFrontMessage"  />
-            <InputField v-if="friend" ref="input-ref" :friendId="friend.id" @pushBackMessage="handlePushBackMessage" @addToLastMessage="handleAddToLastMessage" @stopOpeningAudio="stopOpeningAudio" />
-            <CharacterPhotoField v-if="friend" :character="friend.character" />
+  <div v-if="isOpen" class="fixed inset-0 z-50 flex bg-base-100">
+    <!-- 左侧 Sidebar -->
+    <aside
+      class="bg-base-200 border-r border-base-300 flex flex-col transition-all duration-300 shrink-0"
+      :class="isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden'"
+    >
+      <div class="h-16 flex items-center justify-between px-4 border-b border-base-300 shrink-0">
+        <span class="font-bold">历史对话</span>
+        <button class="btn btn-ghost btn-sm btn-circle" @click="isSidebarOpen = false">←</button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-2 space-y-1">
+        <div class="p-2 rounded-lg bg-base-100 cursor-pointer hover:bg-base-300">
+          当前对话
         </div>
-    </dialog>
+      </div>
+    </aside>
+
+    <!-- 右侧主区域 -->
+    <main class="flex-1 flex flex-col min-w-0">
+      <!-- Header -->
+      <header class="h-16 flex items-center px-4 border-b border-base-300 shrink-0 gap-3 bg-base-100/80 backdrop-blur-sm z-10">
+        <button v-if="!isSidebarOpen" class="btn btn-ghost btn-sm btn-circle" @click="isSidebarOpen = true">☰</button>
+        <button class="btn btn-ghost btn-sm btn-circle" @click="handleClose">×</button>
+        <div class="avatar">
+            <div class="w-8 rounded-full">
+                <img :src="friend?.character.photo" alt="">
+            </div>
+        </div>
+        <span class="font-bold truncate">{{ friend?.character?.name }}</span>
+      </header>
+
+      <!-- 聊天区 -->
+      <div class="flex-1 relative min-h-0" :style="modalStyle">
+        <ChatHistory ref="chat-history-ref" v-if="friend" :history="history" :friendId="friend.id" :character="friend.character" @pushFrontMessage="handlePushFrontMessage" />
+        <InputField v-if="friend" ref="input-ref" :friendId="friend.id" @pushBackMessage="handlePushBackMessage" @addToLastMessage="handleAddToLastMessage" @stopOpeningAudio="stopOpeningAudio" />
+        <!-- <CharacterPhotoField v-if="friend" :character="friend.character" /> -->
+      </div>
+    </main>
+  </div>
 </template>
 <style scoped>
-
 </style>

@@ -107,7 +107,7 @@ defineExpose({
 })
 </script>
 <template>
-<div ref="scroll-ref" class="absolute top-18 left-0 w-90 h-112 overflow-y-scroll no-scrollbar">
+<div ref="scroll-ref" class="absolute inset-x-0 top-4 bottom-4 overflow-y-scroll no-scrollbar">
     <div ref="sentinel-ref" class="h-2"></div>
     <Message
         v-for="message in history"
