@@ -57,8 +57,8 @@ async function openModal(photo: any) {
       enableOrientation: true,
       enforceBoundary: true
     })
-    await croppie.bind({ url: photo })
   }
+  await croppie!.bind({ url: photo })
 }
 
 async function crop() {

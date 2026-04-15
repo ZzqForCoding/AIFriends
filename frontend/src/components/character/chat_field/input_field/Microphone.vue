@@ -79,15 +79,15 @@ onBeforeUnmount(() => {
 })
 </script>
 <template>
-    <div class="absolute bottom-4 left-2 h-12 w-86 flex items-center bg-black/30 backdrop-blur-sm rounded-2xl">
+    <div class="absolute bottom-4 left-4 right-4 h-12 flex items-center bg-white/95 rounded-2xl shadow-lg border border-gray-200/50">
         <div v-if="isSpeaking" class="flex items-center justify-center gap-1 h-6 flex-1">
-            <div v-for="i in 32" :key="i" class="w-0.5 bg-blue-400 rounded-full animate-wave"
+            <div v-for="i in 32" :key="i" class="w-0.5 bg-primary rounded-full animate-wave"
                 :style="{ animationDelay: `${i * 0.1}s` }"></div>
         </div>
-        <div v-else class="text-white/50 text-base w-full text-center">
+        <div v-else class="text-gray-400 text-base w-full text-center">
             语音输入
         </div>
-        <div @click="emit('close')" class="absolute right-2 w-8 h-8 flex justify-center items-center cursor-pointer">
+        <div @click="emit('close')" class="absolute right-2 w-8 h-8 flex justify-center items-center cursor-pointer text-gray-600 hover:text-blue-500 transition-colors">
             <KeyboardIcon />
         </div>
     </div>

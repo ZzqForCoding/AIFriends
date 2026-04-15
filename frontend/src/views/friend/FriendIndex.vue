@@ -76,10 +76,12 @@ onBeforeUnmount(() => {
 <template>
     <div class="flex flex-col items-center mb-12">
         <div class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-9 mt-12 justify-items-center w-full px-9">
+            <!-- 传入 friend 对象，使 Character 组件在 Character 被删除后仍能从快照字段展示信息 -->
             <Character
                 v-for="friend in friends"
                 :key="friend.id"
                 :character="friend.character"
+                :friend="friend"
                 :canRemoveFriend="true"
                 :friendId="friend.id"
                 @remove="removeFriend"

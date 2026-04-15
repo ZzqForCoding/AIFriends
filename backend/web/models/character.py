@@ -20,12 +20,12 @@ class Character(models.Model):
     author = models.ForeignKey(UserProfile, on_delete=models.CASCADE)
     name = models.CharField(max_length=50)
     photo = models.ImageField(upload_to=photo_upload_to)
+    background_image = models.ImageField(upload_to=background_image_upload_to)
     profile = models.TextField(max_length=100000)
     opening_message = models.TextField(default='', blank=True)
     opening_message_input_tokens = models.IntegerField(default=0)
     opening_message_output_tokens = models.IntegerField(default=0)
     opening_message_total_tokens = models.IntegerField(default=0)
-    background_image = models.ImageField(upload_to=background_image_upload_to)
     create_time = models.DateTimeField(default=now)
     update_time = models.DateTimeField(default=now)
 

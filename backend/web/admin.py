@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from web.models.character import Character
-from web.models.friend import Friend, Message, SystemPrompt
+from web.models.friend import Friend, Session, Message, SystemPrompt
 from web.models.user import UserProfile
 
 @admin.register(UserProfile)
@@ -17,8 +17,12 @@ class CharacterAdmin(admin.ModelAdmin):
 class FriendAdmin(admin.ModelAdmin):
     raw_id_fields = ('me', 'character', )
 
+@admin.register(Session)
+class SessionAdmin(admin.ModelAdmin):
+    raw_id_fields = ('friend', )
+
 @admin.register(Message)
 class MessageAdmin(admin.ModelAdmin):
-    raw_id_fields = ('friend', )
+    raw_id_fields = ('session', )
 
 admin.site.register(SystemPrompt)

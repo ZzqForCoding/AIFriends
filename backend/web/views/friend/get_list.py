@@ -14,22 +14,24 @@ class GetListFriendView(APIView):
                 me__user=request.user
             ).order_by('-update_time')[items_count: items_count + 20]
             friends = []
+            # Character 被删除后 friend.character 为 None，所有字段必须做空保护，
+            # 优先使用 Friend 上的快照字段保证展示不中断。
             for friend in friends_raw:
                 character = friend.character
-                author = character.author
+                author = character.author if character else None
                 friends.append({
                     'id': friend.id,
                     'character': {
-                        'id': character.id,
-                        'name': character.name,
-                        'profile': character.profile,
-                        'photo': character.photo.url,
-                        'background_image': character.background_image.url,
+                        'id': character.id if character else None,
+                        'name': friend.character_name or (character.name if character else '未知角色'),
+                        'profile': friend.character_profile or (character.profile if character else ''),
+                        'photo': friend.character_photo or (character.photo.url if character and character.photo else ''),
+                        'background_image': friend.character_background_image or (character.background_image.url if character and character.background_image else ''),
                         'author': {
-                            'user_id': author.user_id,
-                            'username': author.user.username,
-                            'photo': author.photo.url
-                        }
+                            'user_id': friend.author_id or (author.id if author else None),
+                            'username': friend.author_username or (author.user.username if author else ''),
+                            'photo': friend.author_photo or (author.photo.url if author and author.photo else '')
+                        } if (friend.author_id or author) else None
                     }
                 })
             return Response({

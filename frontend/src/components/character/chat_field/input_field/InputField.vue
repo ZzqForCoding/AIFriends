@@ -1,17 +1,26 @@
 <script setup lang="ts">
+// InputField: 聊天输入框 + 语音输入 + 流式音频播放（MSE）
+// 核心改动：支持"懒创建会话"——若当前是虚拟新对话（currentSessionId === null），
+// 则在用户点击发送时先调用 /api/friend/session/create/ 创建真实 Session，再发起 SSE 聊天
 import { onUnmounted, ref, useTemplateRef } from 'vue';
 import MicIcon from '../../icons/MicIcon.vue';
 import SendIcon from '../../icons/SendIcon.vue';
 import streamApi from '@/js/http/streamApi'
+import api from '@/js/http/api'
+import { useChatStore } from '@/stores/chat'
+import { useAudioStore } from '@/stores/audio'
 import Microphone from './Microphone.vue';
 
-const props = defineProps(['friendId'])
-const emit = defineEmits(['pushBackMessage', 'addToLastMessage', 'stopOpeningAudio'])
+const emit = defineEmits(['pushBackMessage', 'addToLastMessage', 'stopOpeningAudio', 'sessionCreated'])
 
+const chatStore = useChatStore()
+const audioStore = useAudioStore()
 const inputRef = useTemplateRef('input-ref')
 const message = ref('')
+// processId 用于打断旧的 SSE 连接（切换会话或关闭弹窗时 ++processId）
 let processId = 0
 const showMic = ref(false)
+const isCreatingSession = ref(false)
 
 function focus() {
     inputRef.value?.focus()
@@ -26,7 +35,31 @@ async function handleSend(_event?: Event, audio_msg?: string) {
     }
     if(!content) return
 
-    initAudioStream()
+    // 虚拟状态下先创建真实 Session
+    let actualSessionId = chatStore.currentSessionId
+    if (!actualSessionId && chatStore.friend?.id) {
+        if (isCreatingSession.value) return
+        isCreatingSession.value = true
+        try {
+            const res = await api.post('/api/friend/session/create/', {
+                friend_id: chatStore.friend.id
+            })
+            if (res.data.result === 'success') {
+                actualSessionId = res.data.session.id
+                emit('sessionCreated', res.data.session)
+            } else {
+                return
+            }
+        } catch (err) {
+            return
+        } finally {
+            isCreatingSession.value = false
+        }
+    }
+    if (!actualSessionId) return
+
+    // 初始化流式音频通道，播放 AI 的 TTS 语音
+    audioStore.initStream()
 
     const curId = ++ processId
 
@@ -38,7 +71,7 @@ async function handleSend(_event?: Event, audio_msg?: string) {
     try {
         await streamApi('api/friend/message/chat/', {
             body: {
-                friend_id: props.friendId,
+                session_id: actualSessionId,
                 message: content,
             },
             onmessage(data, isDone) {
@@ -47,9 +80,9 @@ async function handleSend(_event?: Event, audio_msg?: string) {
                     emit('addToLastMessage', data.content)
                 }
                 if(data.audio) {
-                    handleAudioChunk(data.audio)
+                    audioStore.appendStreamChunk(data.audio)
                 }
-            }, 
+            },
             onerror(err) {
             }
         })
@@ -60,108 +93,28 @@ async function handleSend(_event?: Event, audio_msg?: string) {
 function close() {
     ++processId
     showMic.value = false
-    stopAudio()
+    audioStore.stop()
+}
+
+// 中断当前正在进行的流式对话：停止音频 + 忽略后续 SSE 回调
+function abortChat() {
+    ++processId
+    audioStore.stop()
 }
 
 function handleStop() {
-    ++processId
-    stopAudio()
+    abortChat()
     emit('stopOpeningAudio')
 }
 
-let mediaSource: MediaSource | null = null;
-let sourceBuffer: SourceBuffer | null = null;
-const audioPlayer = new Audio(); // 全局播放器实例
-let audioQueue: Uint8Array[] = [];           // 待写入 Buffer 的二进制队列
-let isUpdating: boolean = false;        // Buffer 是否正在写入
-
-const initAudioStream = (): void => {
-    audioPlayer.pause();
-    audioQueue = [];
-    isUpdating = false;
-
-    mediaSource = new MediaSource();
-    audioPlayer.src = URL.createObjectURL(mediaSource);
-
-    mediaSource.addEventListener('sourceopen', () => {
-        try {
-            sourceBuffer = mediaSource!.addSourceBuffer('audio/mpeg');
-            sourceBuffer.addEventListener('updateend', () => {
-                isUpdating = false;
-                processQueue();
-            });
-        } catch (e) {
-            console.error("MSE AddSourceBuffer Error:", e);
-        }
-    });
-
-    audioPlayer.play().catch(e => console.error("等待用户交互以播放音频"));
-};
-
-const processQueue = (): void => {
-    if (isUpdating || audioQueue.length === 0 || !sourceBuffer || sourceBuffer.updating) {
-        return;
-    }
-
-    isUpdating = true;
-    const chunk = audioQueue.shift();
-    if (!chunk) {
-        isUpdating = false;
-        return;
-    }
-    try {
-        sourceBuffer.appendBuffer(chunk.buffer as ArrayBuffer);
-    } catch (e) {
-        console.error("SourceBuffer Append Error:", e);
-        isUpdating = false;
-    }
-};
-
-const stopAudio = (): void => {
-    audioPlayer.pause();
-    audioQueue = [];
-    isUpdating = false;
-
-    if (mediaSource) {
-        if (mediaSource.readyState === 'open') {
-            try {
-                mediaSource.endOfStream();
-            } catch (e) {
-            }
-        }
-        mediaSource = null;
-    }
-
-    if (audioPlayer.src) {
-        URL.revokeObjectURL(audioPlayer.src);
-        audioPlayer.src = '';
-    }
-};
-
-const handleAudioChunk = (base64Data: string): void => {  // 将语音片段添加到播放器队列中
-    try {
-        const binaryString = atob(base64Data);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        audioQueue.push(bytes);
-        processQueue();
-    } catch (e) {
-        console.error("Base64 Decode Error:", e);
-    }
-};
-
 onUnmounted(() => {
-    audioPlayer.pause();
-    audioPlayer.src = '';
-});
+    audioStore.stop()
+})
 
 defineExpose({
     focus,
-    close
+    close,
+    abortChat,
 })
 </script>
 <template>
@@ -169,12 +122,12 @@ defineExpose({
         <input
             ref="input-ref"
             v-model="message"
-            class="input bg-black/30 backdrop-blur-sm text-white text-base w-full h-full rounded-2xl pr-20"
+            class="input bg-white/95 text-gray-800 placeholder-gray-400 text-base w-full h-full rounded-2xl pr-20 shadow-lg border border-gray-200/50 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             type="text" placeholder="请输入文本...">
-        <div @click="handleSend" class="absolute right-2 w-8 h-8 flex justify-center items-center cursor-pointer">
+        <div @click="handleSend" class="absolute right-2 w-8 h-8 flex justify-center items-center cursor-pointer text-gray-600 hover:text-blue-500 transition-colors">
             <SendIcon />
         </div>
-        <div @click="showMic = true" class="absolute right-10 w-8 h-8 flex justify-center items-center cursor-pointer">
+        <div @click="showMic = true" class="absolute right-10 w-8 h-8 flex justify-center items-center cursor-pointer text-gray-600 hover:text-blue-500 transition-colors">
             <MicIcon />
         </div>
     </form>

@@ -161,3 +161,6 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
 ]
+
+# 会话分页数量
+SESSION_PAGE_COUNT = 10

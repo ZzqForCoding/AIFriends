@@ -9,6 +9,8 @@ from warnings import catch_warnings
 
 from django.http import StreamingHttpResponse
 from typing import Generator, Any
+
+from django.utils.timezone import now
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -20,7 +22,7 @@ import json
 
 import websockets
 
-from web.models.friend import Friend, Message, SystemPrompt
+from web.models.friend import Friend, Message, Session, SystemPrompt
 from web.views.friend.message.chat.graph import AgentState, ChatGraph
 from web.views.friend.message.memory.update import update_memory
 
@@ -30,19 +32,26 @@ class SSERenderer(BaseRenderer):
     def render(self, data, accepted_media_type=None, renderer_context=None):
         return data
 
+# 组装系统提示词：从数据库读取通用模板后，再拼接角色身份、性格和长期记忆
+# 注意：显式告诉 AI"你是谁"，防止 AI 把角色名误当成用户名
+# 若 Character 被删除，仍可从 Friend 快照字段中读取角色信息
+# TODO: 后续可考虑将身份定位模板迁移到 SystemPrompt 模型中动态配置
 def add_system_prompt(state, friend) -> AgentState:
     msgs = state['messages']
     system_prompts = SystemPrompt.objects.filter(title='回复').order_by('order_number')
     prompt = ''
     for sp in system_prompts:
         prompt += sp.prompt
-    prompt += f'\n【角色性格】\n{friend.character.profile}\n'
+    character_name = friend.character_name or (friend.character.name if friend.character else '未知角色')
+    profile = friend.character_profile or (friend.character.profile if friend.character else '')
+    prompt += f'\n你的名字是{character_name}，你要扮演这个角色。用户正在和你聊天，请始终从{character_name}的视角进行回复。\n'
+    prompt += f'【角色性格】\n{profile}\n'
     prompt += f'【长期记忆】\n{friend.memory}\n'
     return {'messages': [SystemMessage(prompt)] + msgs}
 
-def add_recent_messages(state, friend) -> AgentState:
+def add_recent_messages(state, session) -> AgentState:
     msgs = state['messages']
-    message_raw = list(Message.objects.filter(friend=friend).order_by('-id')[:10])
+    message_raw = list(Message.objects.filter(session=session).order_by('-id')[:10])
     message_raw.reverse()
     messages = []
     for m in message_raw:
@@ -55,30 +64,36 @@ class MessageChatView(APIView):
     renderer_classes = [SSERenderer]
 
     def post(self, request):
-        friend_id = request.data['friend_id']
+        session_id = request.data['session_id']
         message = request.data['message'].strip()
         if not message:
             return Response({
                 'result': '消息不能为空'
             })
-        friends = Friend.objects.filter(pk=friend_id, me__user=request.user)
-        if not friends.exists():
+        try:
+            session = Session.objects.get(pk=session_id, friend__me__user=request.user)
+        except Session.DoesNotExist:
             return Response({
-                'result': '好友不存在'
+                'result': '会话不存在'
             })
-        friend = friends.first()
+        friend = session.friend
+        # 安全拦截：角色被删除后，已有 Session 只能查看历史，不能再发起新对话
+        if not friend.character:
+            return Response({
+                'result': '该角色已被删除，无法继续对话'
+            })
         app = ChatGraph.create_app()
 
         inputs: AgentState = {
             'messages': [HumanMessage(content=message)]
         }
         inputs = add_system_prompt(inputs, friend)
-        inputs = add_recent_messages(inputs, friend)
+        inputs = add_recent_messages(inputs, session)
         # 非流式回复
         # res = app.invoke(inputs)
         
 
-        response = StreamingHttpResponse(self.event_stream(app, inputs, friend, message), content_type='text/event-stream')
+        response = StreamingHttpResponse(self.event_stream(app, inputs, friend, session, message), content_type='text/event-stream')
         response['Cache-Control'] = 'no-cache'
         # 避免让nginx缓存
         response['X-Accel-Buffering'] = 'no'
@@ -186,7 +201,7 @@ class MessageChatView(APIView):
         finally:
             mq.put_nowait(None)
 
-    def event_stream(self, app, inputs, friend, message) -> Generator[bytes, Any, None]:
+    def event_stream(self, app, inputs, friend, session, message) -> Generator[bytes, Any, None]:
         # 线程安全的队列
         mq = Queue()
         # 创建线程
@@ -214,7 +229,7 @@ class MessageChatView(APIView):
         output_tokens = full_usage.get('output_tokens', 0)
         total_tokens = full_usage.get('total_tokens', 0)
         Message.objects.create(
-            friend = friend,
+            session = session,
             user_message = message[:500],
             input = json.dumps(
                 [m.model_dump() for m in inputs['messages']],
@@ -225,5 +240,9 @@ class MessageChatView(APIView):
             output_tokens = output_tokens,
             total_tokens = total_tokens
         )
-        if Message.objects.filter(friend=friend).count() % 10 == 0:
-            update_memory(friend)
+        friend.update_time = now()
+        friend.save()
+        session.update_time = now()
+        session.save()
+        if Message.objects.filter(session=session).count() % 10 == 0:
+            update_memory(friend, session)

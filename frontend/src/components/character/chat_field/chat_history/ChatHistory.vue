@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onBeforeMount, onBeforeUnmount, onMounted, useTemplateRef } from 'vue';
+import { nextTick, onBeforeMount, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue';
 import Message from './message/Message.vue';
 import api from '@/js/http/api';
 
-const props = defineProps(['history', 'friendId', 'character'])
+const props = defineProps(['history', 'sessionId', 'character'])
 const emit = defineEmits(['pushFrontMessage'])
 const scrollRef = useTemplateRef('scroll-ref')
 const sentinelRef = useTemplateRef('sentinel-ref')
@@ -21,6 +21,7 @@ function checkSentinelVisible() {  // 判断哨兵是否能被看到
 
 async function loadMore() {
     if(isLoading || !hasMessages) return
+    if(!props.sessionId) return
     isLoading = true
 
     let newMessages = []
@@ -28,7 +29,7 @@ async function loadMore() {
         const res = await api.get('/api/friend/message/get_history/', {
             params: {
                 last_message_id: lastMessageId,
-                friend_id: props.friendId
+                session_id: props.sessionId
             }
         })
         const data = res.data
@@ -80,10 +81,23 @@ async function scrollToBottom() {
     }
 }
 
-let observer: any = null
-onMounted(async() => {
-    await loadMore()
+// 判断用户当前是否已经在底部附近（50px 以内）
+function isNearBottom() {
+    const el = scrollRef.value
+    if (!el) return true
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 50
+}
 
+// 智能滚动：仅当用户已经在底部时才自动滚底，
+// 若用户主动上滑查看历史，则保持当前位置不动
+async function smartScrollToBottom() {
+    if (isNearBottom()) {
+        await scrollToBottom()
+    }
+}
+
+let observer: any = null
+onMounted(() => {
     observer = new IntersectionObserver(
         entries => {
             entries.forEach(entry => {
@@ -95,19 +109,29 @@ onMounted(async() => {
         {root: null, rootMargin: '2px', threshold: 0}
     )
 
-    observer.observe(sentinelRef.value)
+    if (sentinelRef.value) {
+        observer.observe(sentinelRef.value)
+    }
 })
 
 onBeforeUnmount(() => {
     observer?.disconnect()
 })
 
+watch(() => props.sessionId, async () => {
+    lastMessageId = 0
+    hasMessages = true
+    await loadMore()
+}, { immediate: true })
+
 defineExpose({
-    scrollToBottom
+    scrollToBottom,
+    smartScrollToBottom,
+    resetAndLoad: loadMore
 })
 </script>
 <template>
-<div ref="scroll-ref" class="absolute inset-x-0 top-4 bottom-4 overflow-y-scroll no-scrollbar">
+<div ref="scroll-ref" class="absolute inset-x-2 top-4 bottom-20 overflow-y-auto pr-1">
     <div ref="sentinel-ref" class="h-2"></div>
     <Message
         v-for="message in history"
@@ -118,14 +142,18 @@ defineExpose({
 </div>
 </template>
 <style scoped>
-/* 隐藏 Chrome, Safari 和 Opera 的滚动条 */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+/* 自定义滚动条样式，显示在右侧 */
+::-webkit-scrollbar {
+  width: 6px;
 }
-
-/* 隐藏 IE, Edge 和 Firefox 的滚动条 */
-.no-scrollbar {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.8);
 }
 </style>
