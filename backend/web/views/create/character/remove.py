@@ -16,7 +16,6 @@ class RemoveCharacterView(APIView):
 
             # 安全删除角色图片：若仍有 Friend 的快照字段引用该文件，则保留物理文件，
             # 避免 Character 删除后历史记录中的图片全部 404。
-            # 注意：Friend 存储的是完整 URL，而 character.photo.name 是相对路径，用 contains 做后缀匹配。
             photo_referenced = Friend.objects.filter(
                 character_photo__contains=character.photo.name
             ).exists() if character.photo else False

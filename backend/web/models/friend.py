@@ -1,8 +1,9 @@
 from django.db import models
 from django.utils.timezone import now, localtime
 
-from web.models.character import Character
-from web.models.user import UserProfile
+from web.models.character import Character, photo_upload_to, background_image_upload_to
+from web.models.user import UserProfile, photo_upload_to as user_photo_upload_to
+
 
 
 class Friend(models.Model):
@@ -17,14 +18,14 @@ class Friend(models.Model):
     )
     # 角色快照字段：当 Character 被删除后，前端仍能从 Friend 中读取到角色的基本信息和图片 URL
     character_name = models.CharField(max_length=50, blank=True, default='')
-    character_photo = models.CharField(max_length=500, blank=True, default='')
-    character_background_image = models.CharField(max_length=500, blank=True, default='')
+    character_photo = models.ImageField(upload_to=photo_upload_to, max_length=500, blank=True, default='')
+    character_background_image = models.ImageField(upload_to=background_image_upload_to, max_length=500, blank=True, default='')
     character_profile = models.TextField(default='', blank=True)
     character_opening_message = models.TextField(default='', blank=True)
     # 作者快照字段：角色删除后仍能显示作者信息
     author_id = models.IntegerField(null=True, blank=True)
     author_username = models.CharField(max_length=50, blank=True, default='')
-    author_photo = models.CharField(max_length=500, blank=True, default='')
+    author_photo = models.ImageField(upload_to=user_photo_upload_to, max_length=500, blank=True, default='')
 
     memory = models.TextField(default="", max_length=5000, blank=True, null=True)
     create_time = models.DateTimeField(default=now)

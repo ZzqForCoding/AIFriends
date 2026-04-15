@@ -38,13 +38,13 @@ class GetOrCreateFriendView(APIView):
             if created:
                 character = Character.objects.get(pk=character_id)
                 friend.character_name = character.name
-                friend.character_photo = character.photo.url if character.photo else ''
-                friend.character_background_image = character.background_image.url if character.background_image else ''
+                friend.character_photo.name = character.photo.name if character.photo else ''
+                friend.character_background_image.name = character.background_image.name if character.background_image else ''
                 friend.character_profile = character.profile
                 friend.character_opening_message = character.opening_message
                 friend.author_id = character.author.id if character.author else None
                 friend.author_username = character.author.user.username if character.author else ''
-                friend.author_photo = character.author.photo.url if character.author and character.author.photo else ''
+                friend.author_photo.name = character.author.photo.name if character.author and character.author.photo else ''
                 friend.save()
 
             # 2. 懒创建会话逻辑：
@@ -76,12 +76,12 @@ class GetOrCreateFriendView(APIView):
                         'id': character.id if character else None,
                         'name': friend.character_name or (character.name if character else '未知角色'),
                         'profile': friend.character_profile or (character.profile if character else ''),
-                        'photo': friend.character_photo or (character.photo.url if character and character.photo else ''),
-                        'background_image': friend.character_background_image or (character.background_image.url if character and character.background_image else ''),
+                        'photo': friend.character_photo.url if friend.character_photo else (character.photo.url if character and character.photo else ''),
+                        'background_image': friend.character_background_image.url if friend.character_background_image else (character.background_image.url if character and character.background_image else ''),
                         'author': {
                             'id': friend.author_id or (author.id if author else None),
                             'username': friend.author_username or (author.user.username if author else ''),
-                            'photo': friend.author_photo or (author.photo.url if author and author.photo else '')
+                            'photo': friend.author_photo.url if friend.author_photo else (author.photo.url if author and author.photo else '')
                         } if (friend.author_id or author) else None
                     }
                 },

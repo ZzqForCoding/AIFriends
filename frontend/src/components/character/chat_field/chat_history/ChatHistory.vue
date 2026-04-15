@@ -1,23 +1,15 @@
 <script setup lang="ts">
-import { nextTick, onBeforeMount, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue';
+import { nextTick, ref, useTemplateRef, watch } from 'vue';
 import Message from './message/Message.vue';
 import api from '@/js/http/api';
+import InfiniteScroll from '@/components/common/InfiniteScroll.vue';
 
 const props = defineProps(['history', 'sessionId', 'character'])
 const emit = defineEmits(['pushFrontMessage'])
-const scrollRef = useTemplateRef('scroll-ref')
-const sentinelRef = useTemplateRef('sentinel-ref')
+const infiniteScrollRef = useTemplateRef<InstanceType<typeof InfiniteScroll>>('infinite-scroll-ref')
 let isLoading = false
 let hasMessages = true
 let lastMessageId = 0
-
-function checkSentinelVisible() {  // 判断哨兵是否能被看到
-  if (!sentinelRef.value) return false
-
-  const sentinelRect = sentinelRef.value.getBoundingClientRect()
-  const scrollRect = scrollRef.value!.getBoundingClientRect()
-  return sentinelRect.top < scrollRect.bottom && sentinelRect.bottom > scrollRect.top
-}
 
 async function loadMore() {
     if(isLoading || !hasMessages) return
@@ -43,8 +35,9 @@ async function loadMore() {
         if(newMessages.length === 0) {
             hasMessages = false
         } else {
-            const oldHeight = scrollRef.value?.scrollHeight
-            const oldTop = scrollRef.value?.scrollTop
+            const container = infiniteScrollRef.value?.container
+            const oldHeight = container?.scrollHeight
+            const oldTop = container?.scrollTop
             for(const m of newMessages) {
                 emit('pushFrontMessage', {
                     role: 'ai',
@@ -60,13 +53,13 @@ async function loadMore() {
             }
 
             await nextTick()
-            const newHeight = scrollRef.value?.scrollHeight
-            const el = scrollRef.value
+            const newHeight = container?.scrollHeight
+            const el = container
             if(el) {
                 el.scrollTop = oldTop! + newHeight! - oldHeight!
             }
 
-            if(checkSentinelVisible()) {
+            if(infiniteScrollRef.value?.checkSentinelVisible()) {
                 await loadMore()
             }
         }
@@ -75,48 +68,13 @@ async function loadMore() {
 
 async function scrollToBottom() {
     await nextTick()
-    const el = scrollRef.value
-    if (el) {
-        el.scrollTop = el.scrollHeight
-    }
+    infiniteScrollRef.value?.scrollToBottom()
 }
 
-// 判断用户当前是否已经在底部附近（50px 以内）
-function isNearBottom() {
-    const el = scrollRef.value
-    if (!el) return true
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 50
-}
-
-// 智能滚动：仅当用户已经在底部时才自动滚底，
-// 若用户主动上滑查看历史，则保持当前位置不动
 async function smartScrollToBottom() {
-    if (isNearBottom()) {
-        await scrollToBottom()
-    }
+    await nextTick()
+    infiniteScrollRef.value?.smartScrollToBottom()
 }
-
-let observer: any = null
-onMounted(() => {
-    observer = new IntersectionObserver(
-        entries => {
-            entries.forEach(entry => {
-                if(entry.isIntersecting) {
-                    loadMore()
-                }
-            })
-        },
-        {root: null, rootMargin: '2px', threshold: 0}
-    )
-
-    if (sentinelRef.value) {
-        observer.observe(sentinelRef.value)
-    }
-})
-
-onBeforeUnmount(() => {
-    observer?.disconnect()
-})
 
 watch(() => props.sessionId, async () => {
     lastMessageId = 0
@@ -131,29 +89,21 @@ defineExpose({
 })
 </script>
 <template>
-<div ref="scroll-ref" class="absolute inset-x-2 top-4 bottom-20 overflow-y-auto pr-1">
-    <div ref="sentinel-ref" class="h-2"></div>
-    <Message
-        v-for="message in history"
-        :key="message.id"
-        :message="message"
-        :character="character"
-    />
-</div>
+<InfiniteScroll
+  ref="infinite-scroll-ref"
+  class="absolute inset-x-2 top-4 bottom-14 pr-2"
+  sentinel-position="top"
+  :has-more="hasMessages"
+  @load-more="loadMore"
+>
+    <!-- pb-8 为底部提示条（角色已删除）留出安全距离，避免最后一条消息被遮挡 -->
+    <div class="pb-8">
+        <Message
+            v-for="message in history"
+            :key="message.id"
+            :message="message"
+            :character="character"
+        />
+    </div>
+</InfiniteScroll>
 </template>
-<style scoped>
-/* 自定义滚动条样式，显示在右侧 */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.5);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.8);
-}
-</style>
