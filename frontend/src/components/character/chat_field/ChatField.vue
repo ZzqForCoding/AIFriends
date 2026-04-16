@@ -17,6 +17,7 @@ import InputField from './input_field/InputField.vue';
 import ChatHistory from './chat_history/ChatHistory.vue';
 import { useChatStore } from '@/stores/chat';
 import { useAudioStore } from '@/stores/audio';
+import ChatSessions from './chat_sessions/ChatSessions.vue';
 
 const chatStore = useChatStore()
 const audioStore = useAudioStore()
@@ -158,44 +159,12 @@ defineExpose({
       class="bg-base-200 border-r border-base-300 flex flex-col transition-all duration-300 shrink-0"
       :class="isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden'"
     >
-      <div class="h-16 flex items-center justify-between px-4 border-b border-base-300 shrink-0">
-        <span class="font-bold">历史对话</span>
-        <div class="flex items-center gap-1">
-          <!-- 角色被删除后（canChat=false）或虚拟会话时不允许新建 -->
-          <button
-            v-if="chatStore.canChat && !chatStore.isVirtualSession"
-            class="btn btn-ghost btn-sm btn-circle"
-            @click="handleCreateSession"
-            title="新建对话"
-          >+</button>
-          <button class="btn btn-ghost btn-sm btn-circle" @click="isSidebarOpen = false">←</button>
-        </div>
-      </div>
-      <div class="flex-1 overflow-y-auto p-2 space-y-1">
-        <!-- 虚拟会话：始终显示在最上方，表示"新的对话" -->
-        <div
-          v-if="chatStore.isVirtualSession"
-          class="p-2 rounded-lg cursor-pointer transition-colors flex items-center justify-between bg-primary text-primary-content font-medium"
-        >
-          <span class="truncate">新的对话</span>
-        </div>
-        <!-- 真实历史会话列表 -->
-        <div
-          v-for="session in chatStore.sessions"
-          :key="session.id"
-          class="p-2 rounded-lg cursor-pointer transition-colors flex items-center justify-between group"
-          :class="session.id === chatStore.currentSessionId ? 'bg-primary text-primary-content font-medium' : 'bg-base-100 hover:bg-base-300'"
-          @click="switchAndLoadSession(session.id)"
-        >
-          <span class="truncate">{{ session.session_name }}</span>
-          <button
-            class="btn btn-ghost btn-xs btn-circle opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
-            :class="session.id === chatStore.currentSessionId ? 'text-white/80 hover:text-white hover:bg-white/20' : 'text-base-content hover:bg-base-300'"
-            @click.stop="handleDeleteSession(session.id)"
-            title="删除"
-          >×</button>
-        </div>
-      </div>
+      <ChatSessions
+        @close-sidebar="isSidebarOpen = false"
+        @create-session="handleCreateSession"
+        @switch-session="switchAndLoadSession"
+        @delete-session="handleDeleteSession"
+      />
     </aside>
 
     <!-- ==================== 右侧主区域 ==================== -->

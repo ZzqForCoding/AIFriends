@@ -23,18 +23,12 @@ class GetListView(APIView):
     def get(self, request):
         try:
             friend_id = int(request.query_params.get('friend_id', 0))
-            last_session_id = int(request.query_params.get('last_session_id', 0))
-            # 注意：默认值必须是 0，不能是 settings.SESSION_PAGE_COUNT，
-            # 否则第一次请求就会跳过前 N 条记录
             items_count = int(request.query_params.get('items_count', 0))
 
             queryset = Session.objects.filter(
                 friend_id=friend_id,
                 friend__me__user=request.user
             ).order_by('-update_time', '-id')
-
-            if last_session_id > 0:
-                queryset = queryset.filter(pk__lt=last_session_id)
 
             sessions_raw = queryset[items_count: items_count + settings.SESSION_PAGE_COUNT]
             sessions = []

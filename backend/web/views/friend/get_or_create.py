@@ -64,17 +64,7 @@ class GetOrCreateFriendView(APIView):
             # 2. 懒创建会话：取最新一个 Session，若没有则返回 None
             current_session = friend.sessions.first()
 
-            # 3. 组装 Session 列表（只返回前 N 个，N 由 settings.SESSION_PAGE_COUNT 控制）
-            sessions_raw = friend.sessions.all()[:settings.SESSION_PAGE_COUNT]
-            sessions = []
-            for s in sessions_raw:
-                sessions.append({
-                    'id': s.id,
-                    'session_name': s.session_name,
-                    'create_time': s.create_time.strftime('%Y-%m-%d %H:%M:%S'),
-                })
-
-            # 4. 组装角色信息：快照字段优先，回退到实时对象
+            # 3. 组装角色信息：快照字段优先，回退到实时对象
             character = friend.character  # 角色被删除后这里为 None
             author = character.author if character else None
 
@@ -96,7 +86,6 @@ class GetOrCreateFriendView(APIView):
                         } if (friend.author_id or author) else None
                     }
                 },
-                'sessions': sessions,
                 'current_session_id': current_session.id if current_session else None
             })
         except:

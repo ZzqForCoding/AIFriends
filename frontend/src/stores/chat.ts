@@ -72,7 +72,7 @@ export const useChatStore = defineStore('chat', () => {
    */
   function initFromGetOrCreate(data: any) {
     friend.value = data.friend
-    sessions.value = data.sessions || []
+    sessions.value = []
     currentSessionId.value = data.current_session_id
     history.value = []
     hasPlayedOpening.value = false
