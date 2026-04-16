@@ -4,7 +4,17 @@ from rest_framework.permissions import IsAuthenticated
 
 from web.models.friend import Session
 
+
 class DeleteView(APIView):
+    """
+    DELETE /api/friend/session/delete/
+
+    2026-04 新增接口：删除指定 Session 及其关联的所有 Message（级联删除）。
+
+    安全校验：
+        - 通过 friend__me__user=request.user 确保用户只能删除自己的会话。
+        - 使用 filter + exists + delete 的标准写法，防止 DoesNotExist 异常。
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):

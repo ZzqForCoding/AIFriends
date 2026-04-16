@@ -8,7 +8,22 @@ from web.models.character import Character
 from web.models.friend import Friend, Message, Session
 from web.models.user import UserProfile
 
+
 class GetOrCreateFriendView(APIView):
+    """
+    GET_OR_CREATE /api/friend/get_or_create/
+
+    2026-04 核心入口，负责三件事：
+        1. 确保当前用户与指定角色之间存在 Friend 记录；若不存在则创建，并立即把
+           Character 的快照信息（名称、头像、背景图、简介、开场白、作者信息）写入 Friend，
+           防止 Character 被删除后前端无法展示历史记录（SET_NULL 保护）。
+        2. 懒创建会话逻辑：
+           - 若该 Friend 下已有 Session，返回最新的一个作为 current_session_id，
+             让用户进入"继续聊"状态；
+           - 若没有任何 Session，返回 current_session_id=None，前端进入"虚拟新对话"状态，
+             等用户发送第一条消息时再由前端调用 /api/friend/session/create/ 真正创建 Session。
+        3. 组装返回数据：快照字段优先，若 Character 仍存在则回退到实时对象。
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -17,8 +32,7 @@ class GetOrCreateFriendView(APIView):
             user = request.user
             user_profile = UserProfile.objects.get(user=user)
 
-            # 1. 确保 Friend 存在。如果新建，则把 Character 的快照信息写入 Friend，
-            #    防止 Character 被删除后前端无法展示历史记录。
+            # 1. 确保 Friend 存在。如果新建，则写入默认值占位，防止后续 .save() 异常
             friend, created = Friend.objects.get_or_create(
                 character_id=character_id,
                 me=user_profile,
@@ -34,7 +48,7 @@ class GetOrCreateFriendView(APIView):
                 }
             )
 
-            # 如果是新建的 Friend，立即写入角色快照（Character 删除后仍可用）
+            # 若是新建的 Friend，立即写入角色快照（Character 删除后仍可用）
             if created:
                 character = Character.objects.get(pk=character_id)
                 friend.character_name = character.name
@@ -47,12 +61,10 @@ class GetOrCreateFriendView(APIView):
                 friend.author_photo.name = character.author.photo.name if character.author and character.author.photo else ''
                 friend.save()
 
-            # 2. 懒创建会话逻辑：
-            #    - 如果该 Friend 下已有 Session，直接返回最新的一个，让用户接着聊
-            #    - 如果没有 Session，返回 current_session_id=None，前端进入"虚拟新对话"状态
+            # 2. 懒创建会话：取最新一个 Session，若没有则返回 None
             current_session = friend.sessions.first()
-            
-            # 3. 组装已有的 Session 列表
+
+            # 3. 组装 Session 列表（只返回前 N 个，N 由 settings.SESSION_PAGE_COUNT 控制）
             sessions_raw = friend.sessions.all()[:settings.SESSION_PAGE_COUNT]
             sessions = []
             for s in sessions_raw:
@@ -62,15 +74,14 @@ class GetOrCreateFriendView(APIView):
                     'create_time': s.create_time.strftime('%Y-%m-%d %H:%M:%S'),
                 })
 
-                
-            # 3. 组装角色信息：快照字段优先，若 Character 仍存在则回退到实时对象
+            # 4. 组装角色信息：快照字段优先，回退到实时对象
             character = friend.character  # 角色被删除后这里为 None
             author = character.author if character else None
-            
+
             return Response({
                 'result': 'success',
                 'friend': {
-                    'id': friend.id if character else None,
+                    'id': friend.id,  # 始终返回 friend.id，即使 character 已被删除
                     'character_opening_message': friend.character_opening_message,
                     'character': {
                         'id': character.id if character else None,

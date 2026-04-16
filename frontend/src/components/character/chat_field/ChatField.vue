@@ -1,10 +1,18 @@
 <script setup lang="ts">
-// ChatField: 聊天弹窗主容器
-// 2026-04 重构说明：
-//   1. 所有会话状态（friend/sessions/history/currentSessionId）迁移到 Pinia useChatStore
-//   2. 本组件只负责 UI 布局、DOM ref 管理和事件转发
-//   3. 核心交互逻辑（懒创建、切换会话、删除会话）全部下沉到 store
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue';
+/**
+ * ChatField: 聊天弹窗主容器
+ *
+ * 2026-04 重构说明：
+ *   1. 所有会话状态（friend/sessions/history/currentSessionId）迁移到 Pinia useChatStore，
+ *      本组件只负责 UI 布局、DOM ref 管理和事件转发。
+ *   2. 核心交互逻辑（懒创建、切换会话、删除会话、历史加载）全部下沉到 store，
+ *      但本组件作为 ChatHistory / InputField 的父组件，需要协调两者的生命周期：
+ *        - 切换 Session 后，先等 store 改状态 -> nextTick -> 再调 ChatHistory.resetAndLoad()
+ *        - 懒创建 Session 后，同样需要 nextTick -> resetAndLoad()，否则 ChatHistory 拿不到新 sessionId
+ *   3. 智能滚底逻辑保留在本层：收到新消息 / AI 流式增量时，只调 smartScrollToBottom()，
+ *      由 ChatHistory 自行判断用户是否在底部，避免打断用户查看历史。
+ */
+import { computed, nextTick, ref, useTemplateRef } from 'vue';
 import InputField from './input_field/InputField.vue';
 import ChatHistory from './chat_history/ChatHistory.vue';
 import { useChatStore } from '@/stores/chat';
@@ -12,9 +20,11 @@ import { useAudioStore } from '@/stores/audio';
 
 const chatStore = useChatStore()
 const audioStore = useAudioStore()
+
 const inputRef = useTemplateRef('input-ref')
 const chatHistoryRef = useTemplateRef('chat-history-ref')
-// 侧边栏展开状态保留在组件层，因为只影响本组件布局
+
+// 侧边栏展开状态保留在组件层，因为只影响本组件内部布局
 const isSidebarOpen = ref(true)
 
 const modalStyle = computed(() => {
@@ -30,6 +40,11 @@ const modalStyle = computed(() => {
   }
 })
 
+/**
+ * 切换会话并加载历史
+ * 关键：必须先 await chatStore.switchSession()，再 await nextTick()，
+ * 保证 ChatHistory 的 props.sessionId 已更新为新的 sessionId，然后再 resetAndLoad()。
+ */
 async function switchAndLoadSession(sessionId: number) {
   await chatStore.switchSession(sessionId)
   await nextTick()
@@ -37,16 +52,53 @@ async function switchAndLoadSession(sessionId: number) {
   inputRef.value?.focus()
 }
 
-// 新建会话前先中断当前可能正在进行的流式输出和音频
-function handleCreateSession() {
+/**
+ * 新建真实会话（用户点击侧边栏 +）
+ * 先中断当前可能正在进行的流式输出和音频，再创建 Session，创建成功后加载历史。
+ */
+async function handleCreateSession() {
   inputRef.value?.abortChat()
   audioStore.stop()
-  chatStore.createSession()
+  await chatStore.createSession()
+  await nextTick()
+  chatHistoryRef.value?.resetAndLoad()
+  inputRef.value?.focus()
 }
 
+/**
+ * 懒创建 Session 完成后的回调（由 InputField 在虚拟新对话下发送第一条消息时触发）
+ * 此时 session 已创建，需要清空前端虚拟开场白，并从后端加载真实历史（含开场白）。
+ */
+async function handleSessionCreated(session: any) {
+  chatStore.handleSessionCreated(session)
+  await nextTick()
+  chatHistoryRef.value?.resetAndLoad()
+}
+
+/**
+ * 删除会话后的 UI 协调
+ * 如果删的是当前会话，store 会自动切到下一个；切完后需要再加载新当前会话的历史。
+ */
+async function handleDeleteSession(sessionId: number) {
+  const wasCurrent = sessionId === chatStore.currentSessionId
+  await chatStore.deleteSession(sessionId)
+  if (wasCurrent && chatStore.currentSessionId) {
+    await nextTick()
+    chatHistoryRef.value?.resetAndLoad()
+  }
+}
+
+/**
+ * 打开弹窗
+ * 虚拟新对话：showModal 会自行插入前端开场白，不需要请求历史。
+ * 真实会话：需要显式调用 resetAndLoad() 从后端加载历史消息。
+ */
 async function showModal() {
   chatStore.showModal()
   await nextTick()
+  if (chatStore.currentSessionId) {
+    chatHistoryRef.value?.resetAndLoad()
+  }
   inputRef.value?.focus()
 }
 
@@ -55,13 +107,15 @@ function handleClose() {
   inputRef.value?.close()
 }
 
-// 用户发送新消息时：先入 history，再智能滚底（仅当用户已在底部时才滚）
+// ==================== 消息事件转发 ====================
+
+/** 用户发送新消息：先入 history，再智能滚底 */
 function handlePushBackMessage(msg: any) {
   chatStore.handlePushBackMessage(msg)
   chatHistoryRef.value?.smartScrollToBottom()
 }
 
-// AI 流式回复增量时：同上，只在底部时自动滚底，防止打断用户查看历史
+/** AI 流式回复增量：追加内容并智能滚底 */
 function handleAddToLastMessage(delta: string) {
   chatStore.handleAddToLastMessage(delta)
   chatHistoryRef.value?.smartScrollToBottom()
@@ -93,12 +147,13 @@ function handleAddToLastMessage(delta: string) {
 // }, { deep: true })
 
 defineExpose({
-    showModal
+  showModal
 })
 </script>
+
 <template>
   <div v-if="chatStore.isOpen" class="fixed inset-0 z-50 flex bg-base-100">
-    <!-- 左侧 Sidebar -->
+    <!-- ==================== 左侧 Sidebar ==================== -->
     <aside
       class="bg-base-200 border-r border-base-300 flex flex-col transition-all duration-300 shrink-0"
       :class="isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden'"
@@ -106,17 +161,25 @@ defineExpose({
       <div class="h-16 flex items-center justify-between px-4 border-b border-base-300 shrink-0">
         <span class="font-bold">历史对话</span>
         <div class="flex items-center gap-1">
-          <button v-if="chatStore.canChat && !chatStore.isVirtualSession" class="btn btn-ghost btn-sm btn-circle" @click="handleCreateSession" title="新建对话">+</button>
+          <!-- 角色被删除后（canChat=false）或虚拟会话时不允许新建 -->
+          <button
+            v-if="chatStore.canChat && !chatStore.isVirtualSession"
+            class="btn btn-ghost btn-sm btn-circle"
+            @click="handleCreateSession"
+            title="新建对话"
+          >+</button>
           <button class="btn btn-ghost btn-sm btn-circle" @click="isSidebarOpen = false">←</button>
         </div>
       </div>
       <div class="flex-1 overflow-y-auto p-2 space-y-1">
+        <!-- 虚拟会话：始终显示在最上方，表示"新的对话" -->
         <div
           v-if="chatStore.isVirtualSession"
           class="p-2 rounded-lg cursor-pointer transition-colors flex items-center justify-between bg-primary text-primary-content font-medium"
         >
           <span class="truncate">新的对话</span>
         </div>
+        <!-- 真实历史会话列表 -->
         <div
           v-for="session in chatStore.sessions"
           :key="session.id"
@@ -124,33 +187,34 @@ defineExpose({
           :class="session.id === chatStore.currentSessionId ? 'bg-primary text-primary-content font-medium' : 'bg-base-100 hover:bg-base-300'"
           @click="switchAndLoadSession(session.id)"
         >
-          <span class="truncate">{{session.session_name}}</span>
+          <span class="truncate">{{ session.session_name }}</span>
           <button
             class="btn btn-ghost btn-xs btn-circle opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
             :class="session.id === chatStore.currentSessionId ? 'text-white/80 hover:text-white hover:bg-white/20' : 'text-base-content hover:bg-base-300'"
-            @click.stop="chatStore.deleteSession(session.id)"
+            @click.stop="handleDeleteSession(session.id)"
             title="删除"
           >×</button>
         </div>
       </div>
     </aside>
 
-    <!-- 右侧主区域 -->
+    <!-- ==================== 右侧主区域 ==================== -->
     <main class="flex-1 flex flex-col min-w-0">
       <!-- Header -->
       <header class="h-16 flex items-center px-4 border-b border-base-300 shrink-0 gap-3 bg-base-100/80 backdrop-blur-sm z-10">
         <button v-if="!isSidebarOpen" class="btn btn-ghost btn-sm btn-circle" @click="isSidebarOpen = true">☰</button>
         <button class="btn btn-ghost btn-sm btn-circle" @click="handleClose">×</button>
         <div class="avatar">
-            <div class="w-8 rounded-full">
-                <img :src="chatStore.characterPhoto" alt="">
-            </div>
+          <div class="w-8 rounded-full">
+            <img :src="chatStore.characterPhoto" alt="">
+          </div>
         </div>
         <span class="font-bold truncate">{{ chatStore.characterName }}</span>
       </header>
 
       <!-- 聊天区 -->
       <div class="flex-1 relative min-h-0" :style="modalStyle">
+        <!-- ChatHistory：只要有真实 sessionId 或是虚拟会话就渲染 -->
         <ChatHistory
           ref="chat-history-ref"
           v-if="chatStore.currentSessionId || chatStore.isVirtualSession"
@@ -159,20 +223,26 @@ defineExpose({
           :character="chatStore.displayCharacter"
           @pushFrontMessage="chatStore.handlePushFrontMessage"
         />
+        <!-- InputField：角色未被删除时才能输入 -->
         <InputField
           v-if="chatStore.canChat"
           ref="input-ref"
           @pushBackMessage="handlePushBackMessage"
           @addToLastMessage="handleAddToLastMessage"
           @stopOpeningAudio="audioStore.stop"
-          @sessionCreated="chatStore.handleSessionCreated"
+          @sessionCreated="handleSessionCreated"
         />
-        <div v-else-if="chatStore.currentSessionId && !chatStore.canChat" class="absolute bottom-0 left-0 right-0 p-4 text-center text-white/80 bg-black/30 backdrop-blur-sm text-sm">
+        <!-- 角色被删除后的只读提示 -->
+        <div
+          v-else-if="chatStore.currentSessionId && !chatStore.canChat"
+          class="absolute bottom-0 left-0 right-0 p-4 text-center text-white/80 bg-black/30 backdrop-blur-sm text-sm"
+        >
           该角色已被删除，仅支持查看历史记录
         </div>
       </div>
     </main>
   </div>
 </template>
+
 <style scoped>
 </style>

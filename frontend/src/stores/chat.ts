@@ -3,27 +3,44 @@ import { ref, computed } from 'vue'
 import api from '@/js/http/api'
 import { useAudioStore } from './audio'
 
-// Chat 全局状态管理（Pinia）
-// 将会话状态从 ChatField 组件中抽离，避免多层 props 传递和重复 computed
-// 核心设计：懒创建会话 —— 打开页面时若 currentSessionId 为 null，前端只渲染虚拟开场白，
-// 等用户发送第一条消息时才真正调用后端创建 Session
+/**
+ * Chat 全局状态管理（Pinia）
+ *
+ * 2026-04 重构背景：
+ *   之前 friend/sessions/history/currentSessionId 全部散落在 ChatField 组件内部，
+ *   导致 Character -> ChatField -> ChatHistory -> InputField 之间 props 传递极深，
+ *   且多个组件都要对同一份状态做 computed，逻辑耦合严重。
+ *
+ * 本 Store 把"会话状态"彻底抽离，核心解决两个问题：
+ *   1. 懒创建会话（Lazy Session Creation）
+ *      - 用户首次打开某角色聊天页时，若该角色下没有任何历史 Session，
+ *        后端返回 current_session_id = null，前端进入"虚拟新对话"状态。
+ *      - 此时只在前端渲染 character_opening_message，不调用后端创建真实 Session，
+ *        等用户真正发送第一条消息时，InputField 再调 /api/friend/session/create/ 懒创建。
+ *   2. 角色删除后的快照保护
+ *      - Friend 表新增了 character_name / character_photo / character_opening_message 等快照字段。
+ *      - 当 Character 被删除（SET_NULL），前端仍能从 friend 快照中读取信息，
+ *        历史会话列表和消息记录都可以正常查看，只是不能再发送新消息。
+ */
 export const useChatStore = defineStore('chat', () => {
-  const friend = ref<any>(null)            // 当前聊天对象（含角色快照）
-  const sessions = ref<any[]>([])          // 侧边栏历史会话列表
-  const currentSessionId = ref<number | null>(null)  // null 表示处于虚拟新对话
-  const history = ref<any[]>([])           // 当前聊天区的消息列表
-  const isOpen = ref(false)                // 弹窗是否打开
+  // ==================== 核心状态 ====================
+  const friend = ref<any>(null)            // 当前聊天的 Friend 对象（含角色快照）
+  const sessions = ref<any[]>([])          // 左侧边栏：该 Friend 下的历史 Session 列表
+  const currentSessionId = ref<number | null>(null)  // null = 虚拟新对话；有值 = 真实会话
+  const history = ref<any[]>([])           // 当前聊天区渲染的消息数组
+  const isOpen = ref(false)                // 聊天弹窗是否打开（控制 ChatField 显隐）
   const isSidebarOpen = ref(true)          // 左侧会话列表是否展开
-  const hasPlayedOpening = ref(false)      // 开场白语音是否已播放
-  const isCreatingSession = ref(false)     // 防止并发创建 Session
+  const hasPlayedOpening = ref(false)      // 开场白语音是否已播放过（预留）
+  const isCreatingSession = ref(false)     // 防止用户快速双击导致并发创建 Session
 
-  // 音频播放器已抽象到 useAudioStore，这里只负责在合适的时机调用 stop()
+  // 音频播放已抽象到 useAudioStore，本 Store 只负责在"切换/关闭/重置"时叫停音频
   const audioStore = useAudioStore()
 
-  // 虚拟会话：当还没有真实 sessionId 时，前端自行渲染开场白，不入库
+  // ==================== 派生状态 ====================
+  // 虚拟会话：currentSessionId 为 null 时，前端自行维护开场白，不入库
   const isVirtualSession = computed(() => !currentSessionId.value)
 
-  // 以下 computed 均做快照回退：角色被删除后仍能从 friend 快照字段读取
+  // 以下 computed 均做"快照 -> 实时对象 -> 兜底默认值"的三级回退
   const characterName = computed(() => {
     return friend.value?.character_name || friend.value?.character?.name || '未知角色'
   })
@@ -36,17 +53,23 @@ export const useChatStore = defineStore('chat', () => {
     return friend.value?.character_background_image || friend.value?.character?.background_image || ''
   })
 
+  // 只把聊天区真正需要的字段暴露出去，减少子组件对 Store 的直接依赖
   const displayCharacter = computed(() => ({
     name: characterName.value,
     photo: characterPhoto.value,
   }))
 
-  // 角色被删除（friend.character.id 为 null）后禁止聊天，只能查看历史
+  // 角色被删除后（friend.character.id 为 null），禁止继续聊天，只能只读历史
   const canChat = computed(() => {
     return !!friend.value?.character?.id
   })
 
-  // 初始化：从 get_or_create 接口数据填充状态
+  // ==================== 动作（Actions） ====================
+
+  /**
+   * 初始化：点击角色卡片后，从 /api/friend/get_or_create/ 的返回数据填充 Store
+   * 注意：此时不设置 isOpen，isOpen 的打开由 ChatField.showModal() 负责
+   */
   function initFromGetOrCreate(data: any) {
     friend.value = data.friend
     sessions.value = data.sessions || []
@@ -56,12 +79,20 @@ export const useChatStore = defineStore('chat', () => {
     audioStore.stop()
   }
 
-  // 打开弹窗：若当前是虚拟新对话，直接在前端渲染开场白（不调用后端 get_history）
+  /**
+   * 打开弹窗
+   * 若当前是虚拟新对话（currentSessionId === null），直接在前端插入开场白消息，
+   * 不调用后端 get_history；若已有真实 Session，则由 ChatField 负责调用 resetAndLoad()
+   */
   function showModal() {
     isOpen.value = true
     if (!currentSessionId.value) {
       if (friend.value?.character_opening_message) {
-        history.value = [{ role: 'ai', content: friend.value.character_opening_message, id: crypto.randomUUID() }]
+        history.value = [{
+          role: 'ai',
+          content: friend.value.character_opening_message,
+          id: crypto.randomUUID()
+        }]
       }
     }
   }
@@ -71,18 +102,30 @@ export const useChatStore = defineStore('chat', () => {
     isOpen.value = false
   }
 
-  // 删除所有真实 Session 后，回到虚拟状态并重新显示前端开场白
+  /**
+   * 进入虚拟新对话状态
+   * 使用场景：删除最后一个真实 Session 后，需要回到"新的对话"状态
+   */
   function enterVirtualSession() {
     currentSessionId.value = null
     history.value = []
     hasPlayedOpening.value = false
     audioStore.stop()
     if (friend.value?.character_opening_message) {
-      history.value = [{ role: 'ai', content: friend.value.character_opening_message, id: crypto.randomUUID() }]
+      history.value = [{
+        role: 'ai',
+        content: friend.value.character_opening_message,
+        id: crypto.randomUUID()
+      }]
     }
   }
 
-  // 切换会话：清空当前历史，停止音频，外部需再调用 ChatHistory.resetAndLoad()
+  /**
+   * 切换会话
+   * 只负责"改 currentSessionId + 清空 history"，不加载历史。
+   * 外部（ChatField）需要在 nextTick 后再调用 ChatHistory.resetAndLoad() 加载消息，
+   * 保证 DOM 更新完成、sessionId props 已同步到 ChatHistory 后再发请求。
+   */
   async function switchSession(sessionId: number) {
     if (sessionId === currentSessionId.value) return
     currentSessionId.value = sessionId
@@ -91,8 +134,10 @@ export const useChatStore = defineStore('chat', () => {
     audioStore.stop()
   }
 
-  // 手动新建真实 Session（点击 + 按钮）
-  // 已在虚拟状态时直接返回，避免重复创建空会话
+  /**
+   * 手动新建真实 Session（用户点击侧边栏 + 按钮）
+   * 若当前已经在虚拟新对话状态，则直接返回，避免创建空 Session。
+   */
   async function createSession() {
     if (!friend.value?.id) return
     if (isVirtualSession.value) return
@@ -111,7 +156,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  // 删除指定 Session；若删的是当前会话且无其他会话，则回到虚拟状态
+  /**
+   * 删除指定 Session
+   * 若删除的是当前正在显示的会话，则自动切到 sessions[0]（最新会话）；
+   * 如果删完后没有剩余会话了，回到虚拟新对话状态。
+   */
   async function deleteSession(sessionId: number) {
     if (!confirm('确定删除该会话吗？')) return
     try {
@@ -132,28 +181,33 @@ export const useChatStore = defineStore('chat', () => {
     } catch (err) {}
   }
 
-  // 消息操作：供 ChatHistory / InputField 调用
+  // ==================== 消息操作（供 ChatHistory / InputField 调用） ====================
+
+  /** 在消息列表末尾追加一条消息（用户发送新消息 / AI 开场占位消息） */
   function handlePushBackMessage(msg: any) {
     history.value.push(msg)
   }
 
+  /** 在消息列表头部插入一条消息（加载历史时，旧消息 prepend 到顶部） */
   function handlePushFrontMessage(msg: any) {
     history.value.unshift(msg)
   }
 
+  /** 追加内容到当前最后一条消息（流式 AI 回复时逐字追加） */
   function handleAddToLastMessage(delta: string) {
     const last = history.value[history.value.length - 1]
     if (last) last.content += delta
   }
 
-  // InputField 在虚拟状态下发送第一条消息时，先创建 Session 再回调此处
-  // 需要清除前端的虚拟开场白，避免和之后 ChatHistory 加载的真实历史重复
+  /**
+   * InputField 在虚拟状态下发送第一条消息时，先创建 Session 再回调此处
+   * 需要把 sessions 重置为只有新 Session 一个，并清空前端虚拟开场白，
+   * 避免之后 ChatHistory 加载真实历史时开场白重复出现。
+   */
   function handleSessionCreated(session: any) {
-    sessions.value.unshift(session)
+    sessions.value = [session]
     currentSessionId.value = session.id
-    if (history.value.length === 1 && history.value[0].role === 'ai') {
-      history.value = []
-    }
+    history.value = []
   }
 
   return {
