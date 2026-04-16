@@ -132,9 +132,9 @@ onBeforeUnmount(() => {
         title="删除"
       >×</button>
     </div>
-    <div ref="sentinel-ref" class="mt-8 h-2 bg-red-500"></div>
+    <div ref="sentinel-ref" class="mt-8 h-2"></div>
     <div v-if="isLoading" class="text-gray-500 mt-4">加载中</div>
-    <div v-else-if="!hasSessions" class="text-gray-500 mt-4">没有更多会话了...</div>
+    <div v-else-if="!hasSessions" class="text-gray-500 mt-4 text-center">没有更多会话了...</div>
   </div>
 </template>
 

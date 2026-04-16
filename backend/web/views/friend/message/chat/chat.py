@@ -1,11 +1,9 @@
-from ast import arg
 import asyncio
 import base64
 import os
 from queue import Queue
 import threading
 from uuid import uuid4
-from warnings import catch_warnings
 
 from django.http import StreamingHttpResponse
 from typing import Generator, Any
@@ -25,6 +23,7 @@ import websockets
 from web.models.friend import Friend, Message, Session, SystemPrompt
 from web.views.friend.message.chat.graph import AgentState, ChatGraph
 from web.views.friend.message.memory.update import update_memory
+from web.views.friend.message.session_name.update import update_session_name
 
 
 class SSERenderer(BaseRenderer):
@@ -121,12 +120,15 @@ class MessageChatView(APIView):
         response['X-Accel-Buffering'] = 'no'
         return response
 
-    async def tts_sender(self, app, inputs, mq, ws, task_id):
+    async def tts_sender(self, app, inputs, mq, ws, task_id, stop_event):
         """
         发送 AI 生成的文本片段到阿里云百炼 TTS WebSocket。
         同时把文本内容和 usage_metadata 放入线程安全队列 mq，供主线程消费并 SSE 推送给前端。
+        若 stop_event 被设置（前端断开连接），则立即停止生成，但仍需发送 finish-task 结束任务。
         """
         async for msg, metadata in app.astream(inputs, stream_mode="messages"):
+            if stop_event.is_set():
+                break
             if isinstance(msg, BaseMessageChunk):
                 if msg.content:
                     await ws.send(json.dumps({
@@ -146,7 +148,7 @@ class MessageChatView(APIView):
                 if isinstance(msg, AIMessageChunk) and hasattr(msg, 'usage_metadata') and msg.usage_metadata:
                     mq.put_nowait({'usage': msg.usage_metadata})
 
-        # 通知 TTS 服务结束本次任务
+        # 通知 TTS 服务结束本次任务（无论正常结束还是中断都必须发送，否则超时/计费异常）
         await ws.send(json.dumps({
             "header": {
                 "action": "finish-task",
@@ -170,7 +172,9 @@ class MessageChatView(APIView):
                 if event in ['task-finished', 'task-failed']:
                     break
 
-    async def run_tts_tasks(self, app, inputs, mq):
+    # 语音合成
+    # 阿里云TTS文档：https://bailian.console.aliyun.com/cn-beijing/?spm=5176.12818093_47.console-base_product-drawer-right.dproducts-and-services-sfm.258b16d0dZyCzu&tab=api#/api/?type=model&url=2853143
+    async def run_tts_tasks(self, app, inputs, mq, stop_event):
         """
         语音合成主协程：
         建立 WebSocket 连接 -> 发送 run-task -> 等待 task-started ->
@@ -212,44 +216,21 @@ class MessageChatView(APIView):
                 if json.loads(msg)['header']['event'] == 'task-started':
                     break
             await asyncio.gather(
-                self.tts_sender(app, inputs, mq, ws, task_id),
+                self.tts_sender(app, inputs, mq, ws, task_id, stop_event),
                 self.tts_receiver(mq, ws),
             )
 
-    def work(self, app, inputs, mq):
+    def work(self, app, inputs, mq, stop_event):
         """在新线程中运行 TTS 协程，通过队列与主线程通信"""
         try:
-            asyncio.run(self.run_tts_tasks(app, inputs, mq))
+            asyncio.run(self.run_tts_tasks(app, inputs, mq, stop_event))
         finally:
             mq.put_nowait(None)  # 发送结束信号
 
-    def event_stream(self, app, inputs, friend, session, message) -> Generator[bytes, Any, None]:
-        """
-        SSE 事件流生成器：
-          1. 启动独立线程跑 TTS（AI 生成 + 语音合成）。
-          2. 主线程消费队列，把文本和音频逐段 yield 给前端。
-          3. 流结束后保存 Message 记录、更新 Friend/Session 时间、触发长期记忆更新。
-        """
-        mq = Queue()
-        thread = threading.Thread(target=self.work, args=(app, inputs, mq))
-        thread.start()
-
-        full_output = ''
-        full_usage = {}
-        while True:
-            msg = mq.get()
-            if not msg:
-                break
-            if msg.get('content', None):
-                full_output += msg['content']
-                yield f'data: {json.dumps({"content": msg["content"]}, ensure_ascii=False)}\n\n'.encode('utf-8')
-            if msg.get('audio', None):
-                yield f'data: {json.dumps({"audio": msg["audio"]}, ensure_ascii=False)}\n\n'.encode('utf-8')
-            if msg.get('usage', None):
-                full_usage = msg['usage']
-
-        yield 'data: [DONE]\n\n'.encode('utf-8')
-
+    def _save_message(self, session, friend, message, inputs, full_output, full_usage):
+        """将已生成的内容持久化到数据库，并更新相关时间戳与记忆。"""
+        if not full_output:
+            return
         input_tokens = full_usage.get('input_tokens', 0)
         output_tokens = full_usage.get('output_tokens', 0)
         total_tokens = full_usage.get('total_tokens', 0)
@@ -274,3 +255,49 @@ class MessageChatView(APIView):
         # 每累计 10 条消息触发一次长期记忆更新
         if Message.objects.filter(session=session).count() % 10 == 0:
             update_memory(friend, session)
+
+    def event_stream(self, app, inputs, friend, session, message) -> Generator[bytes, Any, None]:
+        """
+        SSE 事件流生成器：
+          1. 启动独立线程跑 TTS（AI 生成 + 语音合成）。
+          2. 主线程消费队列，把文本和音频逐段 yield 给前端。
+          3. 当客户端断开（如切换/关闭会话）时，通过 stop_event 通知后台线程停止生成，
+             并在 finally 里把已返回的内容写入数据库，避免数据丢失。
+        """
+        mq = Queue()
+        stop_event = threading.Event()
+        thread = threading.Thread(target=self.work, args=(app, inputs, mq, stop_event))
+        thread.start()
+
+        full_output = ''
+        full_usage = {}
+        saved = False
+
+        try:
+            while True:
+                msg = mq.get()
+                if not msg:
+                    break
+                if msg.get('content', None):
+                    full_output += msg['content']
+                    yield f'data: {json.dumps({"content": msg["content"]}, ensure_ascii=False)}\n\n'.encode('utf-8')
+                if msg.get('audio', None):
+                    yield f'data: {json.dumps({"audio": msg["audio"]}, ensure_ascii=False)}\n\n'.encode('utf-8')
+                if msg.get('usage', None):
+                    full_usage = msg['usage']
+
+            yield 'data: [DONE]\n\n'.encode('utf-8')
+        finally:
+            if not saved:
+                self._save_message(session, friend, message, inputs, full_output, full_usage)
+                saved = True
+            # 首轮对话结束后异步生成标题
+            if session.session_name  == '新的对话':
+                session_name_thread = threading.Thread(
+                    target=update_session_name,
+                    args=(session.id, message),
+                    daemon=True
+                )
+                session_name_thread.start()
+            stop_event.set()
+            thread.join(timeout=2.0)

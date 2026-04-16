@@ -18,6 +18,7 @@ interface StreamApiOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: Record<string, any>;
   headers?: HeadersInit;
+  signal?: AbortSignal;
   onmessage?: (data: any, isDone: boolean) => void;
   onerror?: (err: Error) => void;
   onclose?: () => void;
@@ -57,6 +58,7 @@ export default async function streamApi(url: string, options: StreamApiOptions =
       method: options.method || 'POST',
       headers: buildHeaders(),
       body: JSON.stringify(options.body || {}),
+      signal: options.signal,
       openWhenHidden: true,  // 允许后台运行，防止浏览器因隐藏页面而强制关闭它
       async onopen(response: Response): Promise<void> {
         // 1. 处理 401 Token 过期

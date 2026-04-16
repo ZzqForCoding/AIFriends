@@ -11,7 +11,7 @@ import { useChatStore } from '@/stores/chat'
 import { useAudioStore } from '@/stores/audio'
 import Microphone from './Microphone.vue';
 
-const emit = defineEmits(['pushBackMessage', 'addToLastMessage', 'stopOpeningAudio', 'sessionCreated'])
+const emit = defineEmits(['pushBackMessage', 'addToLastMessage', 'stopOpeningAudio', 'sessionCreated', 'chatFinished'])
 
 const chatStore = useChatStore()
 const audioStore = useAudioStore()
@@ -19,6 +19,7 @@ const inputRef = useTemplateRef('input-ref')
 const message = ref('')
 // processId 用于打断旧的 SSE 连接（切换会话或关闭弹窗时 ++processId）
 let processId = 0
+let abortController: AbortController | null = null
 const showMic = ref(false)
 const isCreatingSession = ref(false)
 
@@ -67,9 +68,12 @@ async function handleSend(_event?: Event, audio_msg?: string) {
 
     emit('pushBackMessage', {role: 'user', content: content, id: crypto.randomUUID()})
     emit('pushBackMessage', {role: 'ai', content: '', id: crypto.randomUUID()})
-
+    // 消息置顶
+    emit('chatFinished')
+    abortController = new AbortController()
     try {
         await streamApi('api/friend/message/chat/', {
+            signal: abortController.signal,
             body: {
                 session_id: actualSessionId,
                 message: content,
@@ -87,18 +91,28 @@ async function handleSend(_event?: Event, audio_msg?: string) {
             }
         })
     } catch (err) {
+    } finally {
+        abortController = null
     }
 }
 
 function close() {
     ++processId
+    if (abortController) {
+        abortController.abort()
+        abortController = null
+    }
     showMic.value = false
     audioStore.stop()
 }
 
-// 中断当前正在进行的流式对话：停止音频 + 忽略后续 SSE 回调
+// 中断当前正在进行的流式对话：停止音频 + 忽略后续 SSE 回调 + 中断 HTTP 连接
 function abortChat() {
     ++processId
+    if (abortController) {
+        abortController.abort()
+        abortController = null
+    }
     audioStore.stop()
 }
 

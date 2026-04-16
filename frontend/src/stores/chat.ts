@@ -210,6 +210,19 @@ export const useChatStore = defineStore('chat', () => {
     history.value = []
   }
 
+  /**
+   * 将指定 Session 提到 sessions 数组最前面（按更新时间排序）
+   * 使用场景：和历史会话沟通后，前端即时调整顺序，与后端 update_time 倒序保持一致
+   */
+  function touchSession(sessionId: number | null) {
+    if (!sessionId) return
+    const idx = sessions.value.findIndex((s: any) => s.id === sessionId)
+    if (idx > 0) {
+      const [session] = sessions.value.splice(idx, 1)
+      sessions.value.unshift(session)
+    }
+  }
+
   return {
     friend,
     sessions,
@@ -235,5 +248,6 @@ export const useChatStore = defineStore('chat', () => {
     handlePushFrontMessage,
     handleAddToLastMessage,
     handleSessionCreated,
+    touchSession,
   }
 })

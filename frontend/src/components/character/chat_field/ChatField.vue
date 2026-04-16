@@ -47,6 +47,7 @@ const modalStyle = computed(() => {
  * 保证 ChatHistory 的 props.sessionId 已更新为新的 sessionId，然后再 resetAndLoad()。
  */
 async function switchAndLoadSession(sessionId: number) {
+  inputRef.value?.abortChat()
   await chatStore.switchSession(sessionId)
   await nextTick()
   chatHistoryRef.value?.resetAndLoad()
@@ -82,6 +83,9 @@ async function handleSessionCreated(session: any) {
  */
 async function handleDeleteSession(sessionId: number) {
   const wasCurrent = sessionId === chatStore.currentSessionId
+  if (wasCurrent) {
+    inputRef.value?.abortChat()
+  }
   await chatStore.deleteSession(sessionId)
   if (wasCurrent && chatStore.currentSessionId) {
     await nextTick()
@@ -120,6 +124,11 @@ function handlePushBackMessage(msg: any) {
 function handleAddToLastMessage(delta: string) {
   chatStore.handleAddToLastMessage(delta)
   chatHistoryRef.value?.smartScrollToBottom()
+}
+
+/** SSE 流正常结束或关闭后，把当前会话提到最前面，保持列表按更新时间倒序 */
+function handleChatFinished() {
+  chatStore.touchSession(chatStore.currentSessionId)
 }
 
 // 开场白语音
@@ -200,6 +209,7 @@ defineExpose({
           @addToLastMessage="handleAddToLastMessage"
           @stopOpeningAudio="audioStore.stop"
           @sessionCreated="handleSessionCreated"
+          @chatFinished="handleChatFinished"
         />
         <!-- 角色被删除后的只读提示 -->
         <div
