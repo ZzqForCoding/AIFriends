@@ -10,8 +10,9 @@
 
 import axios from "axios"
 import {useUserStore} from "@/stores/user.ts";
+import CONFIG_API from '@/js/config/config.ts'
 
-const BASE_URL = 'http://127.0.0.1:8000'
+const BASE_URL = CONFIG_API.HTTP_URL
 
 const api = axios.create({
     baseURL: BASE_URL,

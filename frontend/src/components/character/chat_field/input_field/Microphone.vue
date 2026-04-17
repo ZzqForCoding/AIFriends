@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import KeyboardIcon from '../../icons/KeyboardIcon.vue';
 import { MicVAD } from '@ricky0123/vad-web';
 import api from '@/js/http/api';
+import CONFIG_API from '@/js/config/config';
 
 const emit = defineEmits(['close', 'send', 'stop'])
 
@@ -11,7 +12,7 @@ const isSpeaking = ref(false)
 let vadInstance: MicVAD | null = null;
 
 const startRecording = async () => {
-  const baseUrl = "http://127.0.0.1:8000/static/frontend/vad/";
+  const baseUrl = CONFIG_API.VAD_URL;
   try {
     vadInstance = await MicVAD.new({
       baseAssetPath: baseUrl,
