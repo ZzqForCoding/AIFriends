@@ -11,3 +11,7 @@ static/
 backend/web/documents/data.txt
 backend/web/documents/lancedb_storage
 frontend/public/vad/
+
+INTERVIEW_PREP.md
+COZE_FUNCTION_ANALYSIS.md
+PROJECT_GOALS.md
