@@ -115,9 +115,10 @@ async function openChatField() {
     })
   } else {
     try {
-      const res = await api.post('/api/friend/get_or_create/', {
-        character_id: displayCharacter.value.id || props.character?.id
-      })
+      const payload = props.friendId
+        ? { friend_id: props.friendId }
+        : { character_id: displayCharacter.value.id || props.character?.id }
+      const res = await api.post('/api/friend/get_or_create/', payload)
       const data = res.data
       if (data.result === 'success') {
         chatStore.initFromGetOrCreate(data)
