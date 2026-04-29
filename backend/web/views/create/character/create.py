@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from web.models.character import Character
+from web.models.character import Character, Voice
 from web.models.friend import SystemPrompt
 from web.models.user import UserProfile
 
@@ -21,12 +21,17 @@ class CreateCharacterView(APIView):
             user_profile = UserProfile.objects.get(user=user)
             name = request.data.get('name').strip()
             profile = request.data.get('profile').strip()[:100000]
+            voice_id = request.data.get('voice_id')
             photo = request.FILES.get('photo', None)
             background_image = request.FILES.get('background_image', None)
 
             if not name:
                 return Response({
                     'result': '名字不能为空'
+                })
+            if not voice_id:
+                    return Response({
+                    'result': '音色不能为空'
                 })
             if not profile:
                 return Response({
@@ -40,6 +45,8 @@ class CreateCharacterView(APIView):
                 return Response({
                     'result': '聊天背景不能为空'
                 })
+            
+            voice = Voice.objects.get(pk=voice_id)
 
             system_prompts = SystemPrompt.objects.filter(title='开场白').order_by('order_number')
             prompt = ''
@@ -76,6 +83,7 @@ class CreateCharacterView(APIView):
                 author=user_profile,
                 name=name,
                 profile=profile,
+                voice=voice,
                 opening_message=opening_message,
                 opening_message_input_tokens=opening_message_input_tokens,
                 opening_message_output_tokens=opening_message_output_tokens,

@@ -174,7 +174,7 @@ class MessageChatView(APIView):
 
     # 语音合成
     # 阿里云TTS文档：https://bailian.console.aliyun.com/cn-beijing/?spm=5176.12818093_47.console-base_product-drawer-right.dproducts-and-services-sfm.258b16d0dZyCzu&tab=api#/api/?type=model&url=2853143
-    async def run_tts_tasks(self, app, inputs, mq, stop_event):
+    async def run_tts_tasks(self, app, inputs, mq, stop_event, voice_id):
         """
         语音合成主协程：
         建立 WebSocket 连接 -> 发送 run-task -> 等待 task-started ->
@@ -202,7 +202,7 @@ class MessageChatView(APIView):
                     "model": "cosyvoice-v3-flash",
                     "parameters": {
                         "text_type": "PlainText",
-                        "voice": "longanyang",          # 音色
+                        "voice": voice_id,          # 音色
                         "format": "mp3",                # 音频格式
                         "sample_rate": 22050,           # 采样率
                         "volume": 50,                   # 音量
@@ -220,10 +220,10 @@ class MessageChatView(APIView):
                 self.tts_receiver(mq, ws),
             )
 
-    def work(self, app, inputs, mq, stop_event):
+    def work(self, app, inputs, mq, stop_event, voice_id):
         """在新线程中运行 TTS 协程，通过队列与主线程通信"""
         try:
-            asyncio.run(self.run_tts_tasks(app, inputs, mq, stop_event))
+            asyncio.run(self.run_tts_tasks(app, inputs, mq, stop_event, voice_id))
         finally:
             mq.put_nowait(None)  # 发送结束信号
 
@@ -266,7 +266,7 @@ class MessageChatView(APIView):
         """
         mq = Queue()
         stop_event = threading.Event()
-        thread = threading.Thread(target=self.work, args=(app, inputs, mq, stop_event))
+        thread = threading.Thread(target=self.work, args=(app, inputs, mq, stop_event, friend.character.voice.voice_id))
         thread.start()
 
         full_output = ''

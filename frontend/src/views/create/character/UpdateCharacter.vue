@@ -9,6 +9,7 @@ import {base64ToFile} from "@/js/utils/base64_to_file.ts";
 import api from "@/js/http/api.ts";
 import {useRoute, useRouter} from "vue-router";
 import {useUserStore} from "@/stores/user.ts";
+import Voice from "./component/Voice.vue";
 
 interface ICharacter {
   photo?: string;
@@ -23,8 +24,12 @@ const user = useUserStore()
 const characterId: string | undefined = route.params.character_id as string
 const character = ref<ICharacter>({})
 
+const voices = ref([])
+const curVoiceId = ref(null)
+
 const photoRef = useTemplateRef('photo-ref')
 const nameRef = useTemplateRef('name-ref')
+const voiceRef = useTemplateRef('voice-ref')
 const profileRef = useTemplateRef('profile-ref')
 const backgroundImageRef = useTemplateRef('background-image-ref')
 
@@ -34,6 +39,7 @@ async function handleUpdate() {
 
   const photo = photoRef.value?.myPhoto
   const name = nameRef.value?.myName?.trim()
+  const voice = voiceRef.value?.myVoice
   const profile = profileRef.value?.myProfile?.trim()
   const backgroundImage = backgroundImageRef.value?.myBackgroundImage
 
@@ -45,6 +51,8 @@ async function handleUpdate() {
     errorMessage.value = '头像不能为空'
   } else if(!name) {
     errorMessage.value = '名字不能为空'
+  } else if(!voice) {
+    errorMessage.value = '音色不能为空'
   } else if(!profile) {
     errorMessage.value = '角色介绍不能为空'
   } else if(!backgroundImage) {
@@ -53,6 +61,7 @@ async function handleUpdate() {
     const formData = new FormData()
     formData.append('character_id', characterId)
     formData.append('name', name)
+    formData.append('voice_id', voice)
     formData.append('profile', profile)
     if (character.value && photo !== character.value.photo) {
       formData.append('photo', base64ToFile(photo, 'photo.png'))
@@ -89,6 +98,8 @@ onMounted(async ()=> {
     const data = res.data
     if(data.result === 'success') {
        character.value = data.character
+       voices.value = data.voices
+       curVoiceId.value = data.character.voice_id
     }
   } catch (e) {
   }
@@ -102,6 +113,7 @@ onMounted(async ()=> {
         <h3 class="text-lg font-bold my-4">修改角色</h3>
         <Photo ref="photo-ref" :photo="character.photo"/>
         <Name ref="name-ref" :name="character.name"/>
+        <Voice ref="voice-ref" :voices="voices" :curVoiceId="curVoiceId"/>
         <Profile ref="profile-ref" :profile="character.profile"/>
         <BackgroundImage ref="background-image-ref" :backgroundImage="character.background_image"/>
         <p v-if="errorMessage" class="text-sm text-red-500">{{errorMessage}}</p>

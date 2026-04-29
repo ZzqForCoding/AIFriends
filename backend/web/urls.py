@@ -23,6 +23,7 @@ from web.views.friend.message.tts.tts import TtsView
 from web.views.friend.session.create import CreateView as CreateSessionView
 from web.views.friend.session.delete import DeleteView as DeleteSessionView
 from web.views.friend.session.get_list import GetListView as GetListSessionView
+from web.views.create.character.voice.get_list import GetVoiceList
 
 urlpatterns = [
     path('api/user/account/login/', LoginView.as_view()),
@@ -47,6 +48,7 @@ urlpatterns = [
     path('api/friend/session/create/', CreateSessionView.as_view()),
     path('api/friend/session/delete/', DeleteSessionView.as_view()),
     path('api/friend/session/get_list/', GetListSessionView.as_view()),
+    path('api/create/character/voice/get_list/', GetVoiceList.as_view()),
     path('', index),
     # 兜底路由，若路由没匹配到，则交由前端处理
     re_path(r'^(?!media/|static/|assets/).*$', index)

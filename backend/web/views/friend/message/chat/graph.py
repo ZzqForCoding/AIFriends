@@ -54,7 +54,7 @@ class ChatGraph:
                 }
             }
         ).bind_tools(tools)
-
+        
         def modal_call(state: AgentState) -> AgentState:
             res = llm.invoke(list(state['messages']))
             return {'messages': [res]}
