@@ -90,6 +90,9 @@ DATABASES = {
 }
 
 
+# 增大请求体限制，支持 base64 图片上传
+DATA_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024  # 20MB
+
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 

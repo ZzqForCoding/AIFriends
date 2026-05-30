@@ -22,6 +22,7 @@ import websockets
 
 from web.models.friend import Friend, Message, Session, SystemPrompt
 from web.views.friend.message.chat.graph import AgentState, ChatGraph
+from web.views.friend.message.chat.vision import describe_images
 from web.views.friend.message.memory.update import update_memory
 from web.views.friend.message.session_name.update import update_session_name
 
@@ -91,7 +92,8 @@ class MessageChatView(APIView):
     def post(self, request):
         session_id = request.data['session_id']
         message = request.data['message'].strip()
-        if not message:
+        images = request.data.get('images', [])
+        if not message and not images:
             return Response({'result': '消息不能为空'})
 
         try:
@@ -104,15 +106,30 @@ class MessageChatView(APIView):
         if not friend.character:
             return Response({'result': '该角色已被删除，无法继续对话'})
 
+        # 图片理解：将图片发给视觉模型，用返回的描述替代图片
+        image_description = ''
+        if images:
+            image_description = describe_images(images) or ''
+        print('image_description: ', image_description)
+        # 组装最终的用户消息
+        parts = []
+        if message:
+            parts.append(message)
+        if image_description:
+            image_count = len(images)
+            label = f'[用户发送了{image_count}张图片，内容描述如下]' if image_count > 1 else '[用户发送了一张图片，内容描述如下]'
+            parts.append(f'{label}\n{image_description}')
+        final_message = '\n\n'.join(parts)
+
         app = ChatGraph.create_app()
         inputs: AgentState = {
-            'messages': [HumanMessage(content=message)]
+            'messages': [HumanMessage(content=final_message)]
         }
         inputs = add_system_prompt(inputs, friend)
         inputs = add_recent_messages(inputs, session)
 
         response = StreamingHttpResponse(
-            self.event_stream(app, inputs, friend, session, message),
+            self.event_stream(app, inputs, friend, session, final_message),
             content_type='text/event-stream'
         )
         response['Cache-Control'] = 'no-cache'
